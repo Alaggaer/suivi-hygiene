@@ -1,13 +1,16 @@
 # Sauvegarde quotidienne de la base Suivi Hygiène, HORS de Supabase.
 # À placer dans un dépôt GitHub PRIVÉ (ex. Alaggaer/suivi-hygiene-sauvegardes) sous .github/workflows/sauvegarde.yml.
 # Secrets à créer dans ce dépôt (Settings > Secrets and variables > Actions) :
-#   SUPABASE_DB_URL      chaîne de connexion « Session pooler » de Supabase (avec le mot de passe de la base)
+#   SUPABASE_DB_PASSWORD mot de passe de la base Supabase (seul, sans adresse)
 #   BACKUP_PASSPHRASE    phrase secrète longue, gardée hors ligne : sans elle, une sauvegarde ne peut pas être relue
 name: Sauvegarde quotidienne
 on:
   schedule:
     - cron: "30 2 * * *"      # chaque nuit vers 3 h 30 (Paris, hiver)
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   sauvegarder:
@@ -20,6 +23,8 @@ jobs:
         ports: ["5432:5432"]
         options: --health-cmd pg_isready --health-interval 5s --health-retries 20
     steps:
+      - uses: actions/checkout@v4
+
       - name: Outils PostgreSQL 17
         run: |
           sudo install -d /usr/share/postgresql-common/pgdg
@@ -28,34 +33,73 @@ jobs:
           sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client-17
 
       - name: Export de la base (schéma et données de l'app, comptes, index des photos)
-        env: { DB: "${{ secrets.SUPABASE_DB_URL }}" }
+        env:
+          # Le mot de passe passe par PGPASSWORD : caractères spéciaux acceptés, jamais affiché dans les journaux.
+          PGPASSWORD: "${{ secrets.SUPABASE_DB_PASSWORD }}"
+          PGHOST: aws-0-eu-west-3.pooler.supabase.com
+          PGPORT: "5432"
+          PGUSER: postgres.ldsxlovhueuzmhrzofjo
+          PGDATABASE: postgres
+          PGSSLMODE: require
         run: |
+          if [ -z "$PGPASSWORD" ]; then echo "::error::Secret SUPABASE_DB_PASSWORD absent"; exit 1; fi
           JOUR=$(date -u +%Y-%m-%d)
           echo "JOUR=$JOUR" >> $GITHUB_ENV
-          /usr/lib/postgresql/17/bin/pg_dump "$DB" --format=custom --no-owner --no-privileges \
-            --schema=public --table=storage.objects --table=auth.users \
-            --file="suivi-hygiene-$JOUR.dump"
-          ls -lh suivi-hygiene-$JOUR.dump
+          # NB : ne pas mélanger --schema et --table dans un même pg_dump (--table annule --schema).
+          # 1) Toute l'application : structure + données du schéma public
+          /usr/lib/postgresql/17/bin/pg_dump --format=custom --no-owner --no-privileges \
+            --schema=public --file="app-$JOUR.dump"
+          # 2) Comptes et index des photos : données seules (ces tables existent déjà dans tout projet Supabase)
+          /usr/lib/postgresql/17/bin/pg_dump --format=custom --no-owner --no-privileges \
+            --data-only --table=auth.users --table=storage.objects --file="comptes-photos-$JOUR.dump"
+          ls -lh *.dump
 
       - name: Vérification de la restauration
-        env: { PGPASSWORD: verif }
+        env: { PGPASSWORD: verif, PGHOST: localhost, PGUSER: postgres }
         run: |
-          psql -h localhost -U postgres -c "create schema auth; create schema storage; create schema extensions; create role authenticated; create role anon; create role service_role;" >/dev/null
-          /usr/lib/postgresql/17/bin/pg_restore -h localhost -U postgres -d postgres --no-owner --no-privileges "suivi-hygiene-$JOUR.dump" 2> restauration.log || true
-          psql -h localhost -U postgres -At -c "select 'releves', count(*) from public.releves union all select 'livraisons', count(*) from public.livraisons union all select 'anomalies', count(*) from public.anomalies union all select 'taches', count(*) from public.taches" | tee comptes.txt
-          test -s comptes.txt   # échoue si les tables n'ont pas été restaurées
+          psql -q -v ON_ERROR_STOP=1 -f outils/verif-stub.sql
+          /usr/lib/postgresql/17/bin/pg_restore -d postgres --no-owner --no-privileges "app-$JOUR.dump" 2> restauration.log || true
+          psql -At -v ON_ERROR_STOP=1 -c "
+            select 'tables', count(*) from information_schema.tables where table_schema='public'
+            union all select 'restaurants', count(*) from public.sites
+            union all select 'releves', count(*) from public.releves
+            union all select 'livraisons', count(*) from public.livraisons
+            union all select 'anomalies', count(*) from public.anomalies
+            union all select 'taches', count(*) from public.taches
+            union all select 'journal', count(*) from public.journal" | tee comptes.txt
+          # Échoue si la structure n'est pas complète ou si aucun restaurant n'est revenu
+          test "$(grep '^tables|' comptes.txt | cut -d'|' -f2)" -ge 15
+          test "$(grep '^restaurants|' comptes.txt | cut -d'|' -f2)" -ge 1
+          # Le fichier comptes/photos doit contenir les données des deux tables
+          /usr/lib/postgresql/17/bin/pg_restore --list "comptes-photos-$JOUR.dump" > contenu.txt
+          grep -q "TABLE DATA auth users" contenu.txt
+          grep -q "TABLE DATA storage objects" contenu.txt
+          echo "fichier comptes/photos : OK" | tee -a comptes.txt
 
       - name: Chiffrement
         env: { PASS: "${{ secrets.BACKUP_PASSPHRASE }}" }
         run: |
+          if [ -z "$PASS" ]; then echo "::error::Secret BACKUP_PASSPHRASE absent : sauvegarde non chiffrée, donc non conservée"; exit 1; fi
+          tar -cf "suivi-hygiene-$JOUR.tar" app-$JOUR.dump comptes-photos-$JOUR.dump
           gpg --batch --yes --pinentry-mode loopback --passphrase "$PASS" --symmetric --cipher-algo AES256 \
-            -o "suivi-hygiene-$JOUR.dump.gpg" "suivi-hygiene-$JOUR.dump"
-          rm "suivi-hygiene-$JOUR.dump"
+            -o "suivi-hygiene-$JOUR.tar.gpg" "suivi-hygiene-$JOUR.tar"
+          # Preuve que la copie se déchiffre bien avec la phrase secrète
+          gpg --batch --quiet --pinentry-mode loopback --passphrase "$PASS" --decrypt "suivi-hygiene-$JOUR.tar.gpg" | cmp - "suivi-hygiene-$JOUR.tar"
+          echo "déchiffrement : OK" | tee -a comptes.txt
+          rm -f *.dump "suivi-hygiene-$JOUR.tar"
 
       - uses: actions/upload-artifact@v4
         with:
           name: sauvegarde-${{ env.JOUR }}
           path: |
-            suivi-hygiene-${{ env.JOUR }}.dump.gpg
+            suivi-hygiene-${{ env.JOUR }}.tar.gpg
             comptes.txt
           retention-days: 90
+
+      - name: Relevé dans l'historique du dépôt
+        run: |
+          mkdir -p historique
+          { echo "Sauvegarde du $JOUR ($(date -u +%H:%M) UTC) : réussie"; cat comptes.txt; } > historique/derniere-sauvegarde.txt
+          { echo; echo "## $JOUR"; cat comptes.txt; } >> historique/journal.md
+          git config user.name "sauvegarde-auto"; git config user.email "actions@users.noreply.github.com"
+          git add historique && git commit -qm "Sauvegarde du $JOUR" && git push -q
