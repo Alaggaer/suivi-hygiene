@@ -22,6 +22,8 @@ function faux(): Api & { reseau: boolean } {
     anomaliesOuvertes: async () => { panne(); return []; },
     executer: async () => {}, televerserPhoto: async () => {},
     estSiege: async () => false, tableauSiege: async () => [], fournisseursNonConformes: async () => [],
+    anomaliesSiege: async () => [], siegeChangerStatut: async () => {}, urlPhoto: async () => "",
+    preuvesJour: async () => ({ taches: [], releves: [], huiles: [], livraisons: [], produits: [], anomalies: [] }),
   });
 }
 
