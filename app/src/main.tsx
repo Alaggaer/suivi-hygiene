@@ -12,7 +12,7 @@ import "./styles.css";
 // Sans variables Supabase (ou avec ?demo dans l'adresse), l'app tourne sur le serveur simulé.
 const url = import.meta.env.VITE_SUPABASE_URL as string | undefined;
 const cle = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
-const demo = !url || !cle || new URLSearchParams(location.search).has("demo");
+const demo = import.meta.env.MODE === "demo" || !url || !cle || new URLSearchParams(location.search).has("demo");
 const api = avecCache(demo ? demoApi : supabaseApi(url!, cle!));
 
 // En démo, la file reste en mémoire (le serveur simulé repart de zéro à chaque chargement).
