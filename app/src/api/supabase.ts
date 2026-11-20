@@ -1,5 +1,5 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
-import type { Anomalie, Api, EtatFriteuse, Fournisseur, FournisseurNC, LigneSiege, SeuilsHuile, Site, Tache } from "../types";
+import type { Anomalie, AnomalieSiege, Api, Preuves, EtatFriteuse, Fournisseur, FournisseurNC, LigneSiege, SeuilsHuile, Site, Tache } from "../types";
 import { ErreurDefinitive, type Operation } from "../operations";
 
 /**
@@ -76,6 +76,25 @@ export function supabaseApi(url: string, cleAnon: string): Api {
     },
     async tableauSiege(jours) { return ok(await sb.rpc("tableau_siege", { p_jours: jours })) as LigneSiege[]; },
     async fournisseursNonConformes(jours) { return ok(await sb.rpc("fournisseurs_non_conformes", { p_jours: jours })) as FournisseurNC[]; },
+    async anomaliesSiege() { return ok(await sb.rpc("anomalies_siege")) as AnomalieSiege[]; },
+    async siegeChangerStatut(id, statut, commentaire) {
+      verifier(await sb.rpc("siege_changer_statut", { p_anomalie: id, p_statut: statut, p_commentaire: commentaire ?? null }));
+    },
+    async preuvesJour(siteId, jour) {
+      const p = ok(await sb.rpc("preuves_jour", { p_site: siteId, p_jour: jour })) as Preuves;
+      const n = (v: unknown) => (v === null || v === undefined ? null : Number(v));
+      return {
+        ...p,
+        releves: p.releves.map((r) => ({ ...r, valeur: Number(r.valeur), t_max: Number(r.t_max) })),
+        huiles: p.huiles.map((h) => ({ ...h, polaires: n(h.polaires) })),
+        livraisons: p.livraisons.map((l) => ({ ...l, t_camion: Number(l.t_camion), t_frais: n(l.t_frais), t_surgele: n(l.t_surgele) })),
+      };
+    },
+    async urlPhoto(chemin) {
+      const { data, error } = await sb.storage.from("photos").createSignedUrl(chemin, 3600);
+      if (error || !data) throw new Error(error?.message ?? "Photo introuvable");
+      return data.signedUrl;
+    },
     async fournisseurs() { return ok(await sb.from("fournisseurs").select("id, nom").eq("actif", true).order("nom")) as Fournisseur[]; },
     async anomaliesOuvertes() {
       return ok(await sb.from("anomalies").select("id, titre, categorie, gravite, statut, cree_at").neq("statut", "verifiee").order("cree_at", { ascending: false })) as Anomalie[];

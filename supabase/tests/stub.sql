@@ -2,7 +2,8 @@
 create schema auth; create role authenticated; create role anon;
 create table auth.claims (jwt jsonb);
 insert into auth.claims values ('{"app_metadata":{"role":"siege"}}');
-create function auth.uid() returns uuid language sql as $$ select null::uuid $$;
+create function auth.uid() returns uuid language sql stable as $$ select nullif(jwt->>'sub', '')::uuid from auth.claims limit 1 $$;
+create table auth.users (id uuid primary key, email text);
 create function auth.role() returns text language sql as $$ select 'authenticated' $$;
 create function auth.jwt() returns jsonb language sql stable as $$ select jwt from auth.claims limit 1 $$;
 create schema storage;

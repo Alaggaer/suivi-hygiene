@@ -148,6 +148,35 @@ do $$ declare r record; begin
   exception when check_violation then null; end;
 end $$;
 
+-- siège v2 : le siège traite et vérifie sous un profil à son nom ; preuves du jour ; compteurs du tableau
+update auth.claims set jwt = '{"sub":"00000000-0000-0000-0000-0000000000c1","app_metadata":{"role":"siege"}}';
+insert into auth.users values ('00000000-0000-0000-0000-0000000000c1','direction@exemple.fr');
+insert into anomalies(id,site_id,source,categorie,gravite,titre) values
+  ('00000000-0000-0000-0000-0000000000d1','00000000-0000-0000-0000-000000000001','manuel','Matériel','critique','Porte CF cassée'),
+  ('00000000-0000-0000-0000-0000000000d2','00000000-0000-0000-0000-000000000001','manuel','Matériel','mineure','Ampoule');
+do $$ declare r record; t record; j jsonb; begin
+  select * into t from tableau_siege(7) where nom = 'DALLAS';
+  assert t.anomalies_critiques >= 1 and t.anomalies_a_verifier = 0, 'critique comptée, rien à vérifier';
+  perform siege_changer_statut('00000000-0000-0000-0000-0000000000d1', 'traitee', 'Réparée par le frigoriste');
+  select * into t from tableau_siege(7) where nom = 'DALLAS';
+  assert t.anomalies_a_verifier = 1, 'traitée = à vérifier';
+  assert t.anomalies_critiques >= 1, 'une critique traitée mais non vérifiée reste comptée';
+  perform siege_changer_statut('00000000-0000-0000-0000-0000000000d1', 'verifiee');
+  assert (select count(*) from profils where auth_id = '00000000-0000-0000-0000-0000000000c1') = 1, 'un seul profil siège, réutilisé';
+  select * into r from anomalies_siege() where id = '00000000-0000-0000-0000-0000000000d1';
+  assert r.statut = 'verifiee' and r.verifiee_par = 'Siège (direction)' and r.traitee_par = 'Siège (direction)', format('traçabilité siège : %s', r.verifiee_par);
+  assert r.restaurant = 'DALLAS', 'nom du restaurant';
+  assert (select count(*) from anomalies_siege() where id = '00000000-0000-0000-0000-0000000000d2') = 1, 'non traitée listée';
+  j := preuves_jour('00000000-0000-0000-0000-000000000001', (now() at time zone 'Europe/Paris')::date);
+  assert jsonb_array_length(j->'releves') >= 1 and jsonb_array_length(j->'taches') >= 2 and jsonb_array_length(j->'anomalies') >= 2, format('preuves du jour : %s', j);
+  assert j ? 'livraisons' and j ? 'produits' and j ? 'huiles', 'toutes les rubriques présentes';
+  assert t.huile_trop_vieille = 0, 'huile de 3 jours : pas trop vieille';
+  update reglages set valeur = valeur || '{"jours_max": 2}' where cle = 'huile';
+  assert (select huile_trop_vieille from tableau_siege(7) where nom = 'DALLAS') = 1, 'au-delà du maximum : signalée';
+  update reglages set valeur = valeur || '{"jours_max": 14}' where cle = 'huile';
+end $$;
+update auth.claims set jwt = '{"app_metadata":{"role":"siege"}}';
+
 -- règles d'accès : une tablette ne voit que son site
 create role tablette in role authenticated; grant usage on schema public, auth to tablette; grant select, insert, update on all tables in schema public to tablette;
 grant select on auth.claims to tablette; grant execute on all functions in schema auth to tablette;
@@ -210,6 +239,18 @@ do $$ declare i int; begin
   begin
     perform * from tableau_siege(7);
     raise exception 'ÉCHEC : une tablette lit le tableau du siège';
+  exception when insufficient_privilege then null; end;
+  begin
+    perform * from anomalies_siege();
+    raise exception 'ÉCHEC : une tablette lit les anomalies du groupe';
+  exception when insufficient_privilege then null; end;
+  begin
+    perform preuves_jour('00000000-0000-0000-0000-000000000001', current_date);
+    raise exception 'ÉCHEC : une tablette lit les preuves d''un autre restaurant';
+  exception when insufficient_privilege then null; end;
+  begin
+    perform siege_changer_statut('00000000-0000-0000-0000-0000000000d2', 'traitee', 'x');
+    raise exception 'ÉCHEC : une tablette agit comme le siège';
   exception when insufficient_privilege then null; end;
   begin
     perform pin_hash from profils;

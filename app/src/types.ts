@@ -36,9 +36,26 @@ export interface Anomalie {
 export interface LigneSiege {
   site_id: string; nom: string; ville: string;
   taches_total: number; taches_a_lheure: number; taches_non_faites: number;
-  anomalies_ouvertes: number; anomalies_critiques: number; plus_ancienne_h: number | null;
+  anomalies_ouvertes: number; anomalies_a_verifier: number; anomalies_critiques: number; plus_ancienne_h: number | null;
   livraisons: number; livraisons_nc: number;
-  huile_mesures: number; huile_rouges: number; huile_max: number | null;
+  huile_mesures: number; huile_rouges: number; huile_max: number | null; huile_trop_vieille: number;
+}
+/** Anomalie vue du siège : tous les restaurants, avec qui l'a créée, traitée, vérifiée. */
+export interface AnomalieSiege {
+  id: string; site_id: string; restaurant: string; titre: string; categorie: string; gravite: Gravite;
+  statut: Anomalie["statut"]; cree_at: string; cree_par: string | null;
+  traitee_at: string | null; traitee_par: string | null; traitee_commentaire: string | null;
+  verifiee_at: string | null; verifiee_par: string | null; photo: string | null;
+}
+/** Preuves d'un restaurant pour un jour (ce qu'on montre lors d'un contrôle). */
+export interface Preuves {
+  taches: { titre: string; echeance: string; faite_at: string | null; par: string | null }[];
+  releves: { enceinte: string; valeur: number; t_max: number; conforme: boolean; action: string | null; par: string; at: string }[];
+  huiles: { friteuse: string; polaires: number | null; filtrage: boolean; changement: boolean; non_utilisee: boolean; par: string; at: string }[];
+  livraisons: { fournisseur: string; t_camion: number; t_frais: number | null; t_surgele: number | null; conforme: boolean; motifs: string[] | null;
+    action: string | null; viande: boolean; origine_ok: boolean | null; photo_bl: string; photo_nc: string | null; range_at: string | null; par: string; at: string }[];
+  produits: { famille: string; service: string; photo: string; par: string; at: string }[];
+  anomalies: { titre: string; gravite: Gravite; statut: Anomalie["statut"]; at: string }[];
 }
 export interface FournisseurNC { fournisseur: string; livraisons: number; non_conformes: number }
 
@@ -61,6 +78,12 @@ export interface Api {
   estSiege(): Promise<boolean>;
   tableauSiege(jours: number): Promise<LigneSiege[]>;
   fournisseursNonConformes(jours: number): Promise<FournisseurNC[]>;
+  anomaliesSiege(): Promise<AnomalieSiege[]>;
+  /** Le siège traite ou vérifie une anomalie (en ligne uniquement, sous son propre profil). */
+  siegeChangerStatut(id: string, statut: "traitee" | "verifiee", commentaire?: string): Promise<void>;
+  preuvesJour(siteId: string, jour: string): Promise<Preuves>;
+  /** Lien temporaire (1 h) vers une photo du stockage privé. */
+  urlPhoto(chemin: string): Promise<string>;
   /** Écritures : appelées uniquement par la file d'envoi, et rejouables sans doublon. */
   executer(op: Operation): Promise<void>;
   televerserPhoto(chemin: string, blob: Blob): Promise<void>;

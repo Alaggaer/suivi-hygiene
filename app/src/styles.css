@@ -160,3 +160,22 @@ textarea{width:100%;min-height:90px;padding:12px;border-radius:12px;border:2px s
 .txt-bad{color:var(--bad)} .txt-warn{color:var(--warn)}
 .row.fait{opacity:.7} .row.off{border-style:dashed}
 .fix p.info{color:var(--warn)}
+
+/* Siège v2 : onglets, anomalies du groupe, preuves */
+.onglets{margin-bottom:18px}
+.compte{display:inline-block;min-width:22px;margin-left:8px;padding:1px 7px;border-radius:11px;background:var(--bad);color:#fff;font-size:13px;font-weight:700}
+.cartes{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:12px;margin-top:12px}
+.carte{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 16px}
+.carte.bad{border-color:var(--bad)}
+.carte-tete{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.carte-titre{font-weight:700;margin:8px 0 4px}
+.carte .hint{margin:2px 0;font-size:14px}
+.carte-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+.carte-actions .champ{flex:1 1 100%}
+.champ{font:inherit;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#fff;min-width:0;flex:1}
+.preuves-choix{display:flex;gap:10px;flex-wrap:wrap;margin:8px 0 14px}
+.preuves-choix .champ{flex:0 1 260px}
+.bloc{margin-top:16px}
+.bloc h3{margin:0 0 6px;font-size:17px}
+.visionneuse{position:fixed;inset:0;background:rgba(10,20,30,.85);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;z-index:50;padding:20px}
+.visionneuse img{max-width:100%;max-height:80vh;border-radius:8px;background:#fff}

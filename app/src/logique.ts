@@ -120,8 +120,10 @@ export function tauxALheure(l: { taches_total: number; taches_a_lheure: number }
 export function scoreSite(l: {
   taches_total: number; taches_a_lheure: number; taches_non_faites: number; anomalies_ouvertes: number;
   anomalies_critiques: number; livraisons_nc: number; huile_rouges: number;
+  anomalies_a_verifier?: number; huile_trop_vieille?: number;
 }): number {
   const t = tauxALheure(l);
   return (t === null ? 0 : (1 - t) * 100) + l.taches_non_faites * 5 + l.anomalies_critiques * 30
-    + l.anomalies_ouvertes * 5 + l.livraisons_nc * 10 + l.huile_rouges * 10;
+    + l.anomalies_ouvertes * 5 + (l.anomalies_a_verifier ?? 0) * 2 + l.livraisons_nc * 10 + l.huile_rouges * 10
+    + (l.huile_trop_vieille ?? 0) * 15;
 }
