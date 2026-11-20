@@ -67,8 +67,8 @@ end $$;
 
 -- 4. Tableau : « ouvertes » = pas encore traitées, « à vérifier » = traitées en attente du chef / siège ;
 --    huile trop vieille = friteuses dont l'huile en place a servi plus de jours que le maximum.
-drop function tableau_siege(integer);
-create function tableau_siege(p_jours integer default 7)
+-- Nouvelle fonction à côté de l'ancienne (pas de suppression) : l'app appelle désormais tableau_siege_v2.
+create function tableau_siege_v2(p_jours integer default 7)
 returns table (site_id uuid, nom text, ville text, taches_total int, taches_a_lheure int, taches_non_faites int,
                anomalies_ouvertes int, anomalies_a_verifier int, anomalies_critiques int, plus_ancienne_h int,
                livraisons int, livraisons_nc int, huile_mesures int, huile_rouges int, huile_max numeric, huile_trop_vieille int)
@@ -102,6 +102,6 @@ begin
 end $$;
 
 revoke execute on function profil_siege(), siege_changer_statut(uuid, statut_anomalie, text), anomalies_siege(),
-  preuves_jour(uuid, date), tableau_siege(integer) from public, anon;
+  preuves_jour(uuid, date), tableau_siege_v2(integer) from public, anon;
 grant execute on function siege_changer_statut(uuid, statut_anomalie, text), anomalies_siege(),
-  preuves_jour(uuid, date), tableau_siege(integer) to authenticated;
+  preuves_jour(uuid, date), tableau_siege_v2(integer) to authenticated;

@@ -155,10 +155,10 @@ insert into anomalies(id,site_id,source,categorie,gravite,titre) values
   ('00000000-0000-0000-0000-0000000000d1','00000000-0000-0000-0000-000000000001','manuel','Matériel','critique','Porte CF cassée'),
   ('00000000-0000-0000-0000-0000000000d2','00000000-0000-0000-0000-000000000001','manuel','Matériel','mineure','Ampoule');
 do $$ declare r record; t record; j jsonb; begin
-  select * into t from tableau_siege(7) where nom = 'DALLAS';
+  select * into t from tableau_siege_v2(7) where nom = 'DALLAS';
   assert t.anomalies_critiques >= 1 and t.anomalies_a_verifier = 0, 'critique comptée, rien à vérifier';
   perform siege_changer_statut('00000000-0000-0000-0000-0000000000d1', 'traitee', 'Réparée par le frigoriste');
-  select * into t from tableau_siege(7) where nom = 'DALLAS';
+  select * into t from tableau_siege_v2(7) where nom = 'DALLAS';
   assert t.anomalies_a_verifier = 1, 'traitée = à vérifier';
   assert t.anomalies_critiques >= 1, 'une critique traitée mais non vérifiée reste comptée';
   perform siege_changer_statut('00000000-0000-0000-0000-0000000000d1', 'verifiee');
@@ -172,7 +172,7 @@ do $$ declare r record; t record; j jsonb; begin
   assert j ? 'livraisons' and j ? 'produits' and j ? 'huiles', 'toutes les rubriques présentes';
   assert t.huile_trop_vieille = 0, 'huile de 3 jours : pas trop vieille';
   update reglages set valeur = valeur || '{"jours_max": 2}' where cle = 'huile';
-  assert (select huile_trop_vieille from tableau_siege(7) where nom = 'DALLAS') = 1, 'au-delà du maximum : signalée';
+  assert (select huile_trop_vieille from tableau_siege_v2(7) where nom = 'DALLAS') = 1, 'au-delà du maximum : signalée';
   update reglages set valeur = valeur || '{"jours_max": 14}' where cle = 'huile';
 end $$;
 update auth.claims set jwt = '{"app_metadata":{"role":"siege"}}';
@@ -239,6 +239,10 @@ do $$ declare i int; begin
   begin
     perform * from tableau_siege(7);
     raise exception 'ÉCHEC : une tablette lit le tableau du siège';
+  exception when insufficient_privilege then null; end;
+  begin
+    perform * from tableau_siege_v2(7);
+    raise exception 'ÉCHEC : une tablette lit le tableau v2 du siège';
   exception when insufficient_privilege then null; end;
   begin
     perform * from anomalies_siege();

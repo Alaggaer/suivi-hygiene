@@ -74,7 +74,7 @@ export function supabaseApi(url: string, cleAnon: string): Api {
       const { data } = await sb.auth.getSession();
       return data.session?.user.app_metadata?.role === "siege";
     },
-    async tableauSiege(jours) { return ok(await sb.rpc("tableau_siege", { p_jours: jours })) as LigneSiege[]; },
+    async tableauSiege(jours) { return ok(await sb.rpc("tableau_siege_v2", { p_jours: jours })) as LigneSiege[]; },
     async fournisseursNonConformes(jours) { return ok(await sb.rpc("fournisseurs_non_conformes", { p_jours: jours })) as FournisseurNC[]; },
     async anomaliesSiege() { return ok(await sb.rpc("anomalies_siege")) as AnomalieSiege[]; },
     async siegeChangerStatut(id, statut, commentaire) {
