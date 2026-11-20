@@ -1,12 +1,15 @@
 import { useEffect, useState } from "react";
-import type { Api, Enceinte, NouvelleAnomalie, Profil, Tache } from "../types";
+import type { Enceinte, Tache } from "../types";
+import { nouvelId, useContexte, useEnregistrer } from "../contexte";
 import { PaveNumerique, temp, useToast } from "../ui/outils";
 import { temperatureConforme } from "../logique";
 
 const ACTIONS = ["Thermostat réglé", "Porte mal fermée, refermée", "Denrées déplacées", "Denrées jetées", "Technicien appelé"];
 
-export function Releves({ api, profil, tache, onFini }: { api: Api; profil: Profil; tache?: Tache; onFini: () => void }) {
+export function Releves({ tache, onFini }: { tache?: Tache; onFini: () => void }) {
   const toast = useToast();
+  const { api } = useContexte();
+  const enregistrer = useEnregistrer();
   const [enceintes, setEnceintes] = useState<Enceinte[]>([]);
   const [vals, setVals] = useState<Record<string, number>>({});
   const [fix, setFix] = useState<Record<string, string>>({});
@@ -22,12 +25,14 @@ export function Releves({ api, profil, tache, onFini }: { api: Api; profil: Prof
   async function valider() {
     setEnvoi(true); setErreur(null);
     try {
-      await api.enregistrerReleves(profil, enceintes.map((e) => ({ enceinte_id: e.id, valeur: vals[e.id], t_max: e.t_max, action: horsSeuil(e) ? fix[e.id] : undefined })), tache?.id);
-      const anomalies: NouvelleAnomalie[] = enceintes.filter(horsSeuil).map((e) => ({
-        source: "releve", categorie: "Température", gravite: "majeure",
+      const lignes = enceintes.map((e) => ({ id: nouvelId(), enceinte_id: e.id, valeur: vals[e.id], t_max: e.t_max, action: horsSeuil(e) ? fix[e.id] : undefined }));
+      await enregistrer({ type: "releves", tache_id: tache?.id, lignes });
+      const anomalies = enceintes.filter(horsSeuil).map((e) => ({
+        id: nouvelId(), source: "releve", categorie: "Température", gravite: "majeure" as const,
         titre: `${e.nom} à ${temp(vals[e.id])} (max ${temp(e.t_max)}) · ${fix[e.id]}`,
+        ref_id: lignes.find((l) => l.enceinte_id === e.id)!.id,
       }));
-      await api.creerAnomalies(profil, anomalies);
+      if (anomalies.length) await enregistrer({ type: "anomalies", lignes: anomalies });
       toast(anomalies.length ? `Relevé enregistré · ${anomalies.length} anomalie(s) créée(s)` : "Relevé enregistré");
       onFini();
     } catch (e) { setErreur((e as Error).message); setEnvoi(false); }

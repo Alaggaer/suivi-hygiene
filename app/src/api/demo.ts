@@ -1,4 +1,5 @@
 import type { Api, Anomalie, Profil, Tache } from "../types";
+import type { Operation } from "../operations";
 
 /** Serveur simulé en mémoire : sert au développement et aux démonstrations, rien n'est conservé. */
 const MIN = 60_000;
@@ -22,11 +23,12 @@ const taches: Tache[] = [
 const anomalies: Anomalie[] = [
   { id: "a1", titre: "Joint de porte abîmé · chambre froide positive", categorie: "Matériel", gravite: "mineure", statut: "ouverte", cree_at: iso(t0 - 26 * 60 * MIN) },
 ];
-const attendre = <T,>(v: T) => new Promise<T>((r) => setTimeout(() => r(v), 120));
-function terminer(tacheId: string | undefined, par: Profil) {
-  const t = taches.find((x) => x.id === tacheId);
-  if (t) { t.faite_at = new Date().toISOString(); t.faite_par_nom = par.nom; }
-}
+/** Ce que le serveur simulé a reçu (identifiants déjà vus : un envoi rejoué est ignoré, comme sur le vrai serveur). */
+export const recuDemo = { ids: new Set<string>(), photos: new Map<string, Blob>(), livraisons: 0, utilisations: 0 };
+const attendre = <T,>(v: T) => new Promise<T>((r) => setTimeout(() => r(v), 80));
+
+/** Pour les démonstrations et les tests : simule une coupure réseau (window.__demoHorsLigne = true). */
+function horsLigne(): boolean { return typeof window !== "undefined" && (window as unknown as { __demoHorsLigne?: boolean }).__demoHorsLigne === true; }
 
 export const demoApi: Api = {
   mode: "demo",
@@ -46,10 +48,35 @@ export const demoApi: Api = {
   ]),
   friteuses: () => attendre([{ id: "f1", nom: "Friteuse 1", litres: 25 }, { id: "f2", nom: "Friteuse 2", litres: 25 }]),
   seuilsHuile: () => attendre({ orange: 20, rouge: 25 }),
-  anomaliesOuvertes: () => attendre(anomalies.filter((a) => a.statut !== "verifiee")),
-  enregistrerReleves: async (par, _items, tacheId) => { terminer(tacheId, par); },
-  enregistrerHuile: async (par, _items, tacheId) => { terminer(tacheId, par); },
-  creerAnomalies: async (_par, items) => {
-    items.forEach((a) => anomalies.unshift({ id: Math.random().toString(36).slice(2), titre: a.titre, categorie: a.categorie, gravite: a.gravite, statut: "ouverte", cree_at: new Date().toISOString() }));
+  fournisseurs: () => attendre(["Transgourmet", "Pomona", "Metro", "Brake", "Boucherie (viandes)", "Boulangerie"].map((nom, i) => ({ id: `f${i}`, nom }))),
+  anomaliesOuvertes: () => attendre(anomalies.filter((a) => a.statut !== "verifiee").map((a) => ({ ...a }))),
+
+  async televerserPhoto(chemin, blob) {
+    if (horsLigne()) throw new TypeError("Failed to fetch");
+    recuDemo.photos.set(chemin, blob);
+  },
+  async executer(op: Operation) {
+    await attendre(null);
+    if (horsLigne()) throw new TypeError("Failed to fetch");
+    const nouveau = (id: string) => { if (recuDemo.ids.has(id)) return false; recuDemo.ids.add(id); return true; };
+    const terminer = (tacheId?: string) => {
+      const t = taches.find((x) => x.id === tacheId);
+      if (t && !t.faite_at) { t.faite_at = op.at_client; t.faite_par_nom = op.par_nom; }
+    };
+    switch (op.type) {
+      case "terminer_tache": terminer(op.tache_id); break;
+      case "anomalies":
+        op.lignes.forEach((a) => {
+          if (nouveau(a.id)) anomalies.unshift({ id: a.id, titre: a.titre, categorie: a.categorie, gravite: a.gravite, statut: "ouverte", cree_at: op.at_client });
+        });
+        break;
+      case "releves": case "huile":
+        op.lignes.forEach((l) => nouveau(l.id));
+        terminer(op.tache_id);   // comme le vrai serveur : la saisie clôt la tâche
+        break;
+      case "livraison": if (nouveau(op.id)) recuDemo.livraisons++; break;
+      case "utilisation": if (nouveau(op.id)) recuDemo.utilisations++; break;
+      case "livraison_rangee": break;
+    }
   },
 };

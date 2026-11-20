@@ -129,3 +129,8 @@ textarea{width:100%;min-height:90px;padding:12px;border-radius:12px;border:2px s
 .keys button:disabled{opacity:.5}
 #root{height:100%}
 .act .badge{color:#fff;font-size:16px}
+.sync{font-size:14px;padding:6px 12px;border-radius:999px;font-weight:700}
+.sync.ok{background:rgba(255,255,255,.12);color:#cfe9d9}
+.sync.warn{background:#f2b630;color:var(--ink)}
+.sync.bad{background:var(--bad);color:#fff}
+.opt:disabled{cursor:not-allowed}

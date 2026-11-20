@@ -1,0 +1,35 @@
+import type { Gravite } from "./types";
+
+/**
+ * Tout ce que la tablette écrit passe par une « opération » mise en file d'attente.
+ * Chaque ligne porte un identifiant créé sur la tablette : si un envoi est rejoué
+ * (réseau coupé au mauvais moment), le serveur ignore le doublon.
+ */
+interface Base { par: string; par_nom: string; at_client: string }
+
+export interface LigneReleve { id: string; enceinte_id: string; valeur: number; t_max: number; action?: string }
+export interface LigneHuile { id: string; friteuse_id: string; polaires: number | null; filtrage: boolean; changement: boolean; litres?: number }
+export interface LigneAnomalie { id: string; source: string; categorie: string; gravite: Gravite; titre: string; photo?: string; ref_id?: string }
+
+export type Operation =
+  | (Base & { type: "releves"; tache_id?: string; lignes: LigneReleve[] })
+  | (Base & { type: "huile"; tache_id?: string; lignes: LigneHuile[] })
+  | (Base & { type: "anomalies"; lignes: LigneAnomalie[] })
+  | (Base & { type: "terminer_tache"; tache_id: string })
+  | (Base & {
+      type: "livraison"; id: string; fournisseur_id: string; fournisseur_nom: string;
+      t_camion: number; t_frais?: number; t_surgele?: number; photo_bl: string;
+      viande: boolean; origine_ok?: boolean; conforme: boolean; motifs?: string[]; action?: string; photo_nc?: string;
+    })
+  | (Base & { type: "livraison_rangee"; livraison_id: string })
+  | (Base & { type: "utilisation"; id: string; photo: string; famille: string; service: "midi" | "soir" });
+
+export type TypeOperation = Operation["type"];
+
+/** Photo en attente d'envoi : `chemin` est sa place dans le stockage du serveur. */
+export interface PhotoEnAttente { chemin: string; blob: Blob }
+
+/** Une erreur qui ne disparaîtra pas en réessayant (donnée refusée par le serveur). */
+export class ErreurDefinitive extends Error {}
+
+export const nouvelId = () => crypto.randomUUID();

@@ -1,12 +1,15 @@
 import { useEffect, useState } from "react";
-import type { Api, Friteuse, NouvelleAnomalie, Profil, SeuilsHuile, Tache } from "../types";
+import type { Friteuse, SeuilsHuile, Tache } from "../types";
+import { nouvelId, useContexte, useEnregistrer } from "../contexte";
 import { PaveNumerique, pct, useToast } from "../ui/outils";
 import { niveauHuile } from "../logique";
 
 type Changement = "fait" | "plus-tard";
 
-export function Huile({ api, profil, tache, onFini }: { api: Api; profil: Profil; tache?: Tache; onFini: () => void }) {
+export function Huile({ tache, onFini }: { tache?: Tache; onFini: () => void }) {
   const toast = useToast();
+  const { api } = useContexte();
+  const enregistrer = useEnregistrer();
   const [friteuses, setFriteuses] = useState<Friteuse[]>([]);
   const [seuils, setSeuils] = useState<SeuilsHuile>({ orange: 20, rouge: 25 });
   const [vals, setVals] = useState<Record<string, number>>({});
@@ -26,15 +29,17 @@ export function Huile({ api, profil, tache, onFini }: { api: Api; profil: Profil
   async function valider() {
     setEnvoi(true); setErreur(null);
     try {
-      await api.enregistrerHuile(profil, friteuses.map((f) => ({
-        friteuse_id: f.id, polaires: vals[f.id], filtrage: !!filtrage[f.id],
+      const lignes = friteuses.map((f) => ({
+        id: nouvelId(), friteuse_id: f.id, polaires: vals[f.id], filtrage: !!filtrage[f.id],
         changement: chg[f.id] === "fait", litres: chg[f.id] === "fait" ? f.litres : undefined,
-      })), tache?.id);
-      const anomalies: NouvelleAnomalie[] = friteuses.filter((f) => chg[f.id] === "plus-tard").map((f) => ({
-        source: "huile", categorie: "Huile", gravite: "majeure",
-        titre: `${f.nom} à ${pct(vals[f.id])} de composés polaires · changement à faire avant le service`,
       }));
-      await api.creerAnomalies(profil, anomalies);
+      await enregistrer({ type: "huile", tache_id: tache?.id, lignes });
+      const anomalies = friteuses.filter((f) => chg[f.id] === "plus-tard").map((f) => ({
+        id: nouvelId(), source: "huile", categorie: "Huile", gravite: "majeure" as const,
+        titre: `${f.nom} à ${pct(vals[f.id])} de composés polaires · changement à faire avant le service`,
+        ref_id: lignes.find((l) => l.friteuse_id === f.id)!.id,
+      }));
+      if (anomalies.length) await enregistrer({ type: "anomalies", lignes: anomalies });
       toast("Mesure de l'huile enregistrée");
       onFini();
     } catch (e) { setErreur((e as Error).message); setEnvoi(false); }

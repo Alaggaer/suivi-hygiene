@@ -1,3 +1,5 @@
+import type { Operation } from "./operations";
+
 export type Role = "equipe" | "chef" | "responsable" | "siege";
 export type Gravite = "mineure" | "majeure" | "critique";
 export type TypeTache = "releves" | "huile" | "nettoyage" | "dlc" | "stock_carte" | "autre";
@@ -18,13 +20,12 @@ export interface Tache {
   escalade: number;          // 0 rien, 1 chef prévenu, 2 responsable prévenu
 }
 
-export interface NouveauReleve { enceinte_id: string; valeur: number; t_max: number; action?: string }
-export interface NouvelleHuile { friteuse_id: string; polaires: number | null; filtrage: boolean; changement: boolean; litres?: number }
-export interface NouvelleAnomalie { source: string; categorie: string; gravite: Gravite; titre: string; ref_id?: string }
+export interface Fournisseur { id: string; nom: string }
 
 export interface Anomalie {
   id: string; titre: string; categorie: string; gravite: Gravite;
   statut: "ouverte" | "traitee" | "verifiee"; cree_at: string;
+  enAttente?: boolean;       // saisie sur la tablette, pas encore reçue par le serveur
 }
 
 /** Tout ce que l'app demande au serveur. Deux implémentations : Supabase (production) et démo (en mémoire). */
@@ -40,7 +41,8 @@ export interface Api {
   friteuses(): Promise<Friteuse[]>;
   seuilsHuile(): Promise<SeuilsHuile>;
   anomaliesOuvertes(): Promise<Anomalie[]>;
-  enregistrerReleves(par: Profil, items: NouveauReleve[], tacheId?: string): Promise<void>;
-  enregistrerHuile(par: Profil, items: NouvelleHuile[], tacheId?: string): Promise<void>;
-  creerAnomalies(par: Profil, items: NouvelleAnomalie[]): Promise<void>;
+  fournisseurs(): Promise<Fournisseur[]>;
+  /** Écritures : appelées uniquement par la file d'envoi, et rejouables sans doublon. */
+  executer(op: Operation): Promise<void>;
+  televerserPhoto(chemin: string, blob: Blob): Promise<void>;
 }

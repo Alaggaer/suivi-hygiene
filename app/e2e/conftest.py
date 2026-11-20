@@ -35,3 +35,17 @@ def saisir(pg, bouton, valeur):
     if neg:
         pg.click('.pad button[aria-label="Changer le signe"]')
     pg.click(".pad button.k-ok")
+
+def png(l=64, h=48):
+    """Petite image PNG valide (pour simuler la photo prise par la tablette)."""
+    import struct, zlib
+    brut = b"".join(b"\x00" + bytes([200, 120, 40]) * l for _ in range(h))
+    def bloc(t, d):
+        return struct.pack(">I", len(d)) + t + d + struct.pack(">I", zlib.crc32(t + d) & 0xFFFFFFFF)
+    return (b"\x89PNG\r\n\x1a\n" + bloc(b"IHDR", struct.pack(">IIBBBBB", l, h, 8, 2, 0, 0, 0))
+            + bloc(b"IDAT", zlib.compress(brut)) + bloc(b"IEND", b""))
+
+def photographier(pg, index=0):
+    pg.locator('.photo input[type="file"]').nth(index).set_input_files(
+        {"name": "etiquette.png", "mimeType": "image/png", "buffer": png()})
+    pg.wait_for_selector(".photo.done")

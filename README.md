@@ -15,6 +15,13 @@ Ne jamais mettre la clé `service_role` dans l'app.
 ## Avancement (MVP)
 - [x] Schéma de base testé (contrôles, interdiction de suppression, journal, PIN)
 - [x] Semaine 1 : activation tablette, connexion PIN, tâches du jour avec retards, relevés de températures, huile
-- [ ] Semaine 2 : livraisons, produit utilisé, photos, hors ligne
+- [x] Semaine 2 : file d'envoi hors ligne (IndexedDB, rejouable sans doublon), lectures et PIN hors ligne, livraisons, produit utilisé, photos compressées, minuteur de rangement
 - [ ] Semaine 3 : minuteurs, anomalies (traitement), escalades et notifications
 - [ ] Semaine 4 : tableau de bord siège, paramétrage, pilote 2 sites
+
+## Tests
+```
+cd app && npm test            # règles métier, file hors ligne, cache (vitest)
+cd app && npm run test:e2e    # parcours tablette dans un vrai navigateur (playwright, mode démo)
+./supabase/tests/run.sh       # migrations + règles de la base sur un Postgres jetable (contrôles, RLS, idempotence)
+```

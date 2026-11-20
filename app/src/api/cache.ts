@@ -1,0 +1,57 @@
+import type { Api } from "../types";
+
+/**
+ * Lectures utilisables hors ligne : chaque réponse est gardée sur la tablette ;
+ * si le serveur est injoignable, on ressert la dernière réponse connue.
+ * Connexion hors ligne : après une première connexion réussie en ligne, une empreinte du PIN
+ * (SHA-256 salée par la personne) est gardée pour pouvoir reconnaître la personne sans réseau.
+ */
+export interface Memoire { get(cle: string): string | null; set(cle: string, v: string): void }
+export const memoireLocale: Memoire = {
+  get: (c) => { try { return localStorage.getItem(c); } catch { return null; } },
+  set: (c, v) => { try { localStorage.setItem(c, v); } catch { /* plein ou indisponible */ } },
+};
+
+const PREFIXE = "suivi-hygiene:cache:";
+const LECTURES = ["site", "profils", "taches", "enceintes", "friteuses", "seuilsHuile", "fournisseurs", "anomaliesOuvertes"] as const;
+
+/** Distingue « pas de réseau » (on ressert le cache) d'un vrai refus du serveur (on le montre). */
+export function estErreurReseau(e: unknown): boolean {
+  return e instanceof TypeError || (e instanceof Error && /fetch|network|réseau|offline|timeout/i.test(e.message));
+}
+
+async function empreinte(profilId: string, pin: string): Promise<string> {
+  const d = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`suivi-hygiene|${profilId}|${pin}`));
+  return [...new Uint8Array(d)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+export function avecCache(api: Api, memoire: Memoire = memoireLocale): Api {
+  const enveloppe: Api = { ...api };
+  for (const nom of LECTURES) {
+    const lire = api[nom].bind(api) as () => Promise<unknown>;
+    (enveloppe as unknown as Record<string, () => Promise<unknown>>)[nom] = async () => {
+      try {
+        const v = await lire();
+        memoire.set(PREFIXE + nom, JSON.stringify(v));
+        return v;
+      } catch (e) {
+        const c = memoire.get(PREFIXE + nom);
+        if (c !== null && estErreurReseau(e)) return JSON.parse(c);
+        throw e;
+      }
+    };
+  }
+  enveloppe.verifierPin = async (profilId, pin) => {
+    const cle = PREFIXE + "pin:" + profilId;
+    try {
+      const ok = await api.verifierPin(profilId, pin);
+      if (ok) memoire.set(cle, await empreinte(profilId, pin));
+      return ok;
+    } catch (e) {
+      const connue = memoire.get(cle);
+      if (connue && estErreurReseau(e)) return connue === (await empreinte(profilId, pin));
+      throw e;
+    }
+  };
+  return enveloppe;
+}
