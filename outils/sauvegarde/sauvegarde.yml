@@ -1,0 +1,61 @@
+# Sauvegarde quotidienne de la base Suivi Hygiène, HORS de Supabase.
+# À placer dans un dépôt GitHub PRIVÉ (ex. Alaggaer/suivi-hygiene-sauvegardes) sous .github/workflows/sauvegarde.yml.
+# Secrets à créer dans ce dépôt (Settings > Secrets and variables > Actions) :
+#   SUPABASE_DB_URL      chaîne de connexion « Session pooler » de Supabase (avec le mot de passe de la base)
+#   BACKUP_PASSPHRASE    phrase secrète longue, gardée hors ligne : sans elle, une sauvegarde ne peut pas être relue
+name: Sauvegarde quotidienne
+on:
+  schedule:
+    - cron: "30 2 * * *"      # chaque nuit vers 3 h 30 (Paris, hiver)
+  workflow_dispatch:
+
+jobs:
+  sauvegarder:
+    runs-on: ubuntu-latest
+    services:
+      # Base vide pour vérifier que la sauvegarde se restaure vraiment (une sauvegarde jamais testée ne vaut rien).
+      verif:
+        image: postgres:17
+        env: { POSTGRES_PASSWORD: verif }
+        ports: ["5432:5432"]
+        options: --health-cmd pg_isready --health-interval 5s --health-retries 20
+    steps:
+      - name: Outils PostgreSQL 17
+        run: |
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl -fsSL -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" | sudo tee /etc/apt/sources.list.d/pgdg.list
+          sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client-17
+
+      - name: Export de la base (schéma et données de l'app, comptes, index des photos)
+        env: { DB: "${{ secrets.SUPABASE_DB_URL }}" }
+        run: |
+          JOUR=$(date -u +%Y-%m-%d)
+          echo "JOUR=$JOUR" >> $GITHUB_ENV
+          /usr/lib/postgresql/17/bin/pg_dump "$DB" --format=custom --no-owner --no-privileges \
+            --schema=public --table=storage.objects --table=auth.users \
+            --file="suivi-hygiene-$JOUR.dump"
+          ls -lh suivi-hygiene-$JOUR.dump
+
+      - name: Vérification de la restauration
+        env: { PGPASSWORD: verif }
+        run: |
+          psql -h localhost -U postgres -c "create schema auth; create schema storage; create schema extensions; create role authenticated; create role anon; create role service_role;" >/dev/null
+          /usr/lib/postgresql/17/bin/pg_restore -h localhost -U postgres -d postgres --no-owner --no-privileges "suivi-hygiene-$JOUR.dump" 2> restauration.log || true
+          psql -h localhost -U postgres -At -c "select 'releves', count(*) from public.releves union all select 'livraisons', count(*) from public.livraisons union all select 'anomalies', count(*) from public.anomalies union all select 'taches', count(*) from public.taches" | tee comptes.txt
+          test -s comptes.txt   # échoue si les tables n'ont pas été restaurées
+
+      - name: Chiffrement
+        env: { PASS: "${{ secrets.BACKUP_PASSPHRASE }}" }
+        run: |
+          gpg --batch --yes --pinentry-mode loopback --passphrase "$PASS" --symmetric --cipher-algo AES256 \
+            -o "suivi-hygiene-$JOUR.dump.gpg" "suivi-hygiene-$JOUR.dump"
+          rm "suivi-hygiene-$JOUR.dump"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sauvegarde-${{ env.JOUR }}
+          path: |
+            suivi-hygiene-${{ env.JOUR }}.dump.gpg
+            comptes.txt
+          retention-days: 90

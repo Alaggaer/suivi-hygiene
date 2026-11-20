@@ -22,6 +22,9 @@ Ne jamais mettre la clé `service_role` dans l'app.
 - [x] Semaine 2 : file d'envoi hors ligne (IndexedDB, rejouable sans doublon), lectures et PIN hors ligne, livraisons, produit utilisé, photos compressées, minuteur de rangement
 - [x] Semaine 3 : minuteurs refroidissement / remise en T°, cycle des anomalies (droits par rôle), Signaler, tâches simples, relances côté serveur (file de notifications ; envoi push à brancher)
 - [x] Tableau de bord siège (5 indicateurs par site, classement, fournisseurs) — sur données d'exemple en attendant Supabase
+- [x] Alertes : envoi par e-mail (fonction envoyer-alertes) toutes les 5 min + résumé du soir ; en attente de la clé Resend et des destinataires
+- [x] Rangement non validé → anomalie ; enceinte hors service dans les relevés
+- [ ] Sauvegarde quotidienne hors Supabase : modèle prêt dans outils/sauvegarde (dépôt privé + 2 secrets)
 - [ ] Semaine 4 : branchement Supabase, envoi des notifications, écrans de paramétrage, pilote 2 sites
 
 ## Tests

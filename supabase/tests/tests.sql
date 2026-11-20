@@ -98,15 +98,30 @@ do $$ declare premier int; begin
 end $$;
 
 
+
+-- rangement non validé : anomalie après 45 min, une seule fois
+insert into livraisons(id,site_id,fournisseur_id,t_camion,photo_bl,conforme,par,at) values ('00000000-0000-0000-0000-0000000000d2','00000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-0000000000f1',3,'y.webp',true,'00000000-0000-0000-0000-0000000000a1', now() - interval '50 minutes');
+do $$ begin
+  perform escalader(); perform escalader();
+  assert (select count(*) from anomalies where source = 'rangement' and ref_id = '00000000-0000-0000-0000-0000000000d2') = 1, 'rangement non validé → 1 anomalie';
+  assert (select count(*) from anomalies where source = 'rangement' and ref_id = '00000000-0000-0000-0000-0000000000d1') = 0, 'livraison rangée → pas d''anomalie';
+end $$;
+
+
+do $$ declare r record; begin
+  select * into r from resume_jour() where nom = 'DALLAS';
+  assert r.taches_total >= 2 and r.livraisons >= 1, 'résumé du jour';
+end $$;
+
 -- tableau du siège (rôle siège dans le jeton)
 do $$ declare r record; begin
   select * into r from tableau_siege(7) where nom = 'DALLAS';
   assert r.taches_total >= 2, 'tâches échues comptées';
   assert r.taches_non_faites >= 2, 'tâches non faites comptées (retard + hier)';
   assert r.anomalies_critiques = 1, 'anomalie critique comptée';
-  assert r.livraisons = 1 and r.livraisons_nc = 0, 'livraisons comptées';
+  assert r.livraisons = 2 and r.livraisons_nc = 0, 'livraisons comptées';
   assert (select count(*) from tableau_siege(7)) = 2, 'un rang par site';
-  assert (select livraisons from fournisseurs_non_conformes(30) where fournisseur = 'Pomona') = 1, 'fournisseurs';
+  assert (select livraisons from fournisseurs_non_conformes(30) where fournisseur = 'Pomona') = 2, 'fournisseurs';
 end $$;
 
 -- règles d'accès : une tablette ne voit que son site
@@ -160,6 +175,10 @@ do $$ declare i int; begin
   exception when raise_exception then
     if sqlerrm like 'ÉCHEC%' then raise; end if;
   end;
+  begin
+    perform * from resume_jour();
+    raise exception 'ÉCHEC : une tablette lit le résumé de tous les sites';
+  exception when insufficient_privilege then null; end;
   begin
     perform escalader();
     raise exception 'ÉCHEC : une tablette lance les relances';

@@ -44,7 +44,7 @@ def test_hors_ligne_puis_retour_du_reseau(page):
     page.click("text=Relevé températures du matin")
     for i, v in enumerate(["2", "-20", "4", "3", "3", "-19"]):
         saisir(page, page.locator("button.val").nth(i), v)
-    page.click("text=Valider le relevé")
+    page.click(".screen button.bigbtn:text-is('Valider le relevé')")
     page.wait_for_selector(".home")
     # la tâche est cochée tout de suite, même sans réseau
     page.wait_for_selector(".task.faite:has-text('Relevé températures du matin')", timeout=3000)
