@@ -17,7 +17,8 @@ Ne jamais mettre la clé `service_role` dans l'app.
 - [x] Semaine 1 : activation tablette, connexion PIN, tâches du jour avec retards, relevés de températures, huile
 - [x] Semaine 2 : file d'envoi hors ligne (IndexedDB, rejouable sans doublon), lectures et PIN hors ligne, livraisons, produit utilisé, photos compressées, minuteur de rangement
 - [x] Semaine 3 : minuteurs refroidissement / remise en T°, cycle des anomalies (droits par rôle), Signaler, tâches simples, relances côté serveur (file de notifications ; envoi push à brancher)
-- [ ] Semaine 4 : tableau de bord siège, paramétrage, pilote 2 sites
+- [x] Tableau de bord siège (5 indicateurs par site, classement, fournisseurs) — sur données d'exemple en attendant Supabase
+- [ ] Semaine 4 : branchement Supabase, envoi des notifications, écrans de paramétrage, pilote 2 sites
 
 ## Tests
 ```

@@ -1,5 +1,5 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
-import type { Anomalie, Api, Fournisseur, Site, Tache } from "../types";
+import type { Anomalie, Api, Fournisseur, FournisseurNC, LigneSiege, Site, Tache } from "../types";
 import { ErreurDefinitive, type Operation } from "../operations";
 
 /**
@@ -66,6 +66,12 @@ export function supabaseApi(url: string, cleAnon: string): Api {
       const r = ok(await sb.from("reglages").select("valeur").eq("cle", "huile").single()) as { valeur: { orange: number; rouge: number } };
       return r.valeur;
     },
+    async estSiege() {
+      const { data } = await sb.auth.getSession();
+      return data.session?.user.app_metadata?.role === "siege";
+    },
+    async tableauSiege(jours) { return ok(await sb.rpc("tableau_siege", { p_jours: jours })) as LigneSiege[]; },
+    async fournisseursNonConformes(jours) { return ok(await sb.rpc("fournisseurs_non_conformes", { p_jours: jours })) as FournisseurNC[]; },
     async fournisseurs() { return ok(await sb.from("fournisseurs").select("id, nom").eq("actif", true).order("nom")) as Fournisseur[]; },
     async anomaliesOuvertes() {
       return ok(await sb.from("anomalies").select("id, titre, categorie, gravite, statut, cree_at").neq("statut", "verifiee").order("cree_at", { ascending: false })) as Anomalie[];

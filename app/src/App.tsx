@@ -8,6 +8,7 @@ import { Accueil } from "./screens/Accueil";
 import { Anomalies, FeuilleNonConforme, LancerMinuteur, Signaler, TacheSimple } from "./screens/Semaine3";
 import { Activation, Connexion } from "./screens/Connexion";
 import { Releves } from "./screens/Releves";
+import { TableauSiege } from "./screens/Siege";
 import { Huile } from "./screens/Huile";
 import { Livraison } from "./screens/Livraison";
 import { Produit } from "./screens/Produit";
@@ -41,6 +42,7 @@ export function appliquerEnAttente(taches: Tache[], anomalies: Anomalie[], entre
 export default function App({ api, file }: { api: Api; file: FileEnvoi }) {
   const toast = useToast();
   const [activee, setActivee] = useState<boolean | null>(null);
+  const [siege, setSiege] = useState(false);
   const [site, setSite] = useState<Site | null>(null);
   const [profil, setProfil] = useState<Profil | null>(null);
   const [ecran, setEcran] = useState<Ecran>({ nom: "accueil" });
@@ -53,7 +55,13 @@ export default function App({ api, file }: { api: Api; file: FileEnvoi }) {
   const maintenant = useMaintenant(10_000);
 
   useEffect(() => { api.estActivee().then(setActivee); }, [api]);
-  useEffect(() => { if (activee) api.site().then(setSite).catch((e) => setErreur(e.message)); }, [api, activee]);
+  useEffect(() => {
+    if (!activee) return;
+    api.estSiege().then((s) => {
+      setSiege(s);
+      if (!s) api.site().then(setSite).catch((e) => setErreur(e.message));
+    });
+  }, [api, activee]);
 
   // Envoi de la file : au démarrage, au retour du réseau, et toutes les 30 s.
   useEffect(() => {
@@ -93,6 +101,7 @@ export default function App({ api, file }: { api: Api; file: FileEnvoi }) {
   let corps;
   if (activee === null) corps = <p className="hint">Chargement…</p>;
   else if (!activee) corps = <Activation api={api} onActivee={() => setActivee(true)} />;
+  else if (siege) corps = <TableauSiege api={api} />;
   else if (!site) corps = <p className="hint">{erreur ?? "Chargement du restaurant…"}</p>;
   else if (!profil) corps = <Connexion api={api} onConnecte={(p) => { setProfil(p); toast(`Bonjour ${p.nom}`); }} />;
   else if (ecran.nom === "releves") corps = <Releves tache={ecran.tache} onFini={retour} />;
@@ -108,12 +117,18 @@ export default function App({ api, file }: { api: Api; file: FileEnvoi }) {
   const contenu = (
     <div id="app">
       <div className="top">
-        <span className="site">{site ? `${site.nom} · ${site.ville}` : "Suivi Hygiène"}</span>
+        <span className="site">{siege ? "Siège · Suivi Hygiène" : site ? `${site.nom} · ${site.ville}` : "Suivi Hygiène"}</span>
         {profil && <span className="who">{profil.nom} <button className="chipbtn" onClick={() => { setProfil(null); setEcran({ nom: "accueil" }); }}>Changer d'utilisateur</button></span>}
-        <Synchro enLigne={enLigne} attente={etatFile.attente} bloquees={etatFile.bloquees} />
+        {!siege && <Synchro enLigne={enLigne} attente={etatFile.attente} bloquees={etatFile.bloquees} />}
         <span className="clock num">{hm(maintenant)}</span>
       </div>
-      {api.mode === "demo" && <div className="demo">Mode démonstration : serveur simulé, rien n'est conservé. PIN : Karim 1234, Julie 1111, Mehdi 2222, Thomas 3333.</div>}
+      {api.mode === "demo" && (
+        <div className="demo">
+          {siege
+            ? <>Vue siège · chiffres d'exemple. <a href="?demo">Revenir à la tablette</a></>
+            : <>Mode démonstration : serveur simulé, rien n'est conservé. PIN : Karim 1234, Julie 1111, Mehdi 2222, Thomas 3333. <a href="?demo&siege">Voir le tableau du siège</a></>}
+        </div>
+      )}
       {erreur && profil && <div className="demo" style={{ background: "var(--bad-bg)", color: "var(--bad)" }}>{erreur}</div>}
       {profil && <Bandeau minuteurs={minuteurs.liste} retirer={minuteurs.retirer} />}
       <main id="main">{corps}</main>

@@ -75,3 +75,17 @@ export function transitionPermise(de: StatutAnomalie, vers: StatutAnomalie, role
   if (de === "traitee" && vers === "verifiee") return role !== "equipe";
   return false;
 }
+
+/** Tableau du siège : taux de tâches faites à l'heure (null si aucune tâche échue). */
+export function tauxALheure(l: { taches_total: number; taches_a_lheure: number }): number | null {
+  return l.taches_total ? l.taches_a_lheure / l.taches_total : null;
+}
+/** Plus le score est haut, plus le site demande d'attention. Sert à classer du pire au meilleur. */
+export function scoreSite(l: {
+  taches_total: number; taches_a_lheure: number; taches_non_faites: number; anomalies_ouvertes: number;
+  anomalies_critiques: number; livraisons_nc: number; huile_rouges: number;
+}): number {
+  const t = tauxALheure(l);
+  return (t === null ? 0 : (1 - t) * 100) + l.taches_non_faites * 5 + l.anomalies_critiques * 30
+    + l.anomalies_ouvertes * 5 + l.livraisons_nc * 10 + l.huile_rouges * 10;
+}

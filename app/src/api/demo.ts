@@ -24,6 +24,12 @@ const taches: Tache[] = [
 const anomalies: Anomalie[] = [
   { id: "a1", titre: "Joint de porte abîmé · chambre froide positive", categorie: "Matériel", gravite: "mineure", statut: "ouverte", cree_at: iso(t0 - 26 * 60 * MIN) },
 ];
+const SITES_DEMO = [
+  ["ATLANTA", "LANGUEUX"], ["BOSTON", "RENNES"], ["COLUMBIA", "BRÉTIGNY-SUR-ORGE"], ["DALLAS", "CHAMBRAY"],
+  ["ELVIS AND CO", "TOURS"], ["MIAMI'S", "DIJON"], ["NEW-YORK", "ARRAS"], ["PHILADELPHIE", "LES CLAYES-SOUS-BOIS"],
+  ["PHOENIX", "SARAN"], ["SITE 10", "À COMPLÉTER"], ["SITE 11", "À COMPLÉTER"], ["SITE 12", "À COMPLÉTER"],
+  ["SITE 13", "À COMPLÉTER"], ["SITE 14", "À COMPLÉTER"], ["SITE 15", "À COMPLÉTER"],
+];
 /** Ce que le serveur simulé a reçu (identifiants déjà vus : un envoi rejoué est ignoré, comme sur le vrai serveur). */
 export const recuDemo = { ids: new Set<string>(), photos: new Map<string, Blob>(), livraisons: 0, utilisations: 0 };
 const attendre = <T,>(v: T) => new Promise<T>((r) => setTimeout(() => r(v), 80));
@@ -50,6 +56,28 @@ export const demoApi: Api = {
   friteuses: () => attendre([{ id: "f1", nom: "Friteuse 1", litres: 25 }, { id: "f2", nom: "Friteuse 2", litres: 25 }]),
   seuilsHuile: () => attendre({ orange: 20, rouge: 25 }),
   fournisseurs: () => attendre(["Transgourmet", "Pomona", "Metro", "Brake", "Boucherie (viandes)", "Boulangerie"].map((nom, i) => ({ id: `f${i}`, nom }))),
+  estSiege: async () => typeof location !== "undefined" && new URLSearchParams(location.search).has("siege"),
+  tableauSiege: async (jours) => SITES_DEMO.map((s, i) => {
+    // Chiffres d'exemple déterministes (mêmes à chaque chargement), proportionnels à la période.
+    const r = (k: number) => ((i * 37 + k * 11) % 17) / 17;
+    const f = jours / 7, total = Math.round(70 * f), aLheure = Math.round(total * (0.72 + r(1) * 0.26));
+    const ouvertes = Math.round(r(4) * 6), critiques = ouvertes && r(5) > 0.85 ? 1 : 0;
+    const mesures = Math.round((12 + r(9) * 2) * f), rouges = Math.min(mesures, r(10) > 0.8 ? Math.ceil(f) : 0);
+    return {
+      site_id: `s${i}`, nom: s[0], ville: s[1], taches_total: total, taches_a_lheure: aLheure,
+      taches_non_faites: Math.round((total - aLheure) * 0.15), anomalies_ouvertes: ouvertes, anomalies_critiques: critiques,
+      plus_ancienne_h: ouvertes ? Math.max(1, Math.round(r(6) * 90)) : null,
+      livraisons: Math.round((18 + r(7) * 8) * f), livraisons_nc: Math.round(r(8) * 3 * f),
+      huile_mesures: mesures, huile_rouges: rouges, huile_max: Math.round((14 + r(11) * 12) * 10) / 10,
+    };
+  }),
+  fournisseursNonConformes: async () => [
+    { fournisseur: "Boucherie (viandes)", livraisons: 64, non_conformes: 7 },
+    { fournisseur: "Pomona", livraisons: 120, non_conformes: 5 },
+    { fournisseur: "Transgourmet", livraisons: 138, non_conformes: 3 },
+    { fournisseur: "Metro", livraisons: 42, non_conformes: 1 },
+    { fournisseur: "Brake", livraisons: 55, non_conformes: 0 },
+  ],
   anomaliesOuvertes: () => attendre(anomalies.filter((a) => a.statut !== "verifiee").map((a) => ({ ...a }))),
 
   async televerserPhoto(chemin, blob) {

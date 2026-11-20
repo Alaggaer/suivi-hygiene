@@ -93,3 +93,16 @@ describe("cycle des anomalies", () => {
     expect(transitionPermise("verifiee", "ouverte", "siege")).toBe(false);
   });
 });
+
+import { scoreSite, tauxALheure } from "./logique";
+describe("tableau du siège", () => {
+  const ok = { taches_total: 20, taches_a_lheure: 20, taches_non_faites: 0, anomalies_ouvertes: 0, anomalies_critiques: 0, livraisons_nc: 0, huile_rouges: 0 };
+  it("taux à l'heure, sans division par zéro", () => {
+    expect(tauxALheure({ taches_total: 20, taches_a_lheure: 15 })).toBe(0.75);
+    expect(tauxALheure({ taches_total: 0, taches_a_lheure: 0 })).toBeNull();
+  });
+  it("une anomalie critique pèse plus qu'un léger retard", () => {
+    expect(scoreSite(ok)).toBe(0);
+    expect(scoreSite({ ...ok, anomalies_critiques: 1, anomalies_ouvertes: 1 })).toBeGreaterThan(scoreSite({ ...ok, taches_a_lheure: 18 }));
+  });
+});

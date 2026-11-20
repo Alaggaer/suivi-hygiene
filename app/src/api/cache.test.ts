@@ -20,6 +20,7 @@ function faux(): Api & { reseau: boolean } {
     fournisseurs: async () => { panne(); return []; },
     anomaliesOuvertes: async () => { panne(); return []; },
     executer: async () => {}, televerserPhoto: async () => {},
+    estSiege: async () => false, tableauSiege: async () => [], fournisseursNonConformes: async () => [],
   });
 }
 

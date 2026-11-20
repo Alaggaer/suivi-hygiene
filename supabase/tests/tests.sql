@@ -97,6 +97,18 @@ do $$ declare premier int; begin
   assert (select count(*) from notifications where destinataire='siege' and titre like 'Non traitée : Hotte%') = 1, 'majeure > 24 h → siège';
 end $$;
 
+
+-- tableau du siège (rôle siège dans le jeton)
+do $$ declare r record; begin
+  select * into r from tableau_siege(7) where nom = 'DALLAS';
+  assert r.taches_total >= 2, 'tâches échues comptées';
+  assert r.taches_non_faites >= 2, 'tâches non faites comptées (retard + hier)';
+  assert r.anomalies_critiques = 1, 'anomalie critique comptée';
+  assert r.livraisons = 1 and r.livraisons_nc = 0, 'livraisons comptées';
+  assert (select count(*) from tableau_siege(7)) = 2, 'un rang par site';
+  assert (select livraisons from fournisseurs_non_conformes(30) where fournisseur = 'Pomona') = 1, 'fournisseurs';
+end $$;
+
 -- règles d'accès : une tablette ne voit que son site
 create role tablette; grant usage on schema public, auth to tablette; grant select, insert, update on all tables in schema public to tablette;
 grant select on auth.claims to tablette; grant execute on all functions in schema public, auth to tablette;
@@ -110,6 +122,10 @@ do $$ begin
   begin
     insert into releves(site_id,enceinte_id,valeur,t_max,par) values ('00000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-0000000000e1',2,3,'00000000-0000-0000-0000-0000000000a2');
     raise exception 'ÉCHEC : écriture pour un autre site acceptée';
+  exception when insufficient_privilege then null; end;
+  begin
+    perform * from tableau_siege(7);
+    raise exception 'ÉCHEC : une tablette lit le tableau du siège';
   exception when insufficient_privilege then null; end;
   begin
     perform pin_hash from profils;

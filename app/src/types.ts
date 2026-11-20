@@ -28,6 +28,15 @@ export interface Anomalie {
   enAttente?: boolean;       // saisie sur la tablette, pas encore reçue par le serveur
 }
 
+export interface LigneSiege {
+  site_id: string; nom: string; ville: string;
+  taches_total: number; taches_a_lheure: number; taches_non_faites: number;
+  anomalies_ouvertes: number; anomalies_critiques: number; plus_ancienne_h: number | null;
+  livraisons: number; livraisons_nc: number;
+  huile_mesures: number; huile_rouges: number; huile_max: number | null;
+}
+export interface FournisseurNC { fournisseur: string; livraisons: number; non_conformes: number }
+
 /** Tout ce que l'app demande au serveur. Deux implémentations : Supabase (production) et démo (en mémoire). */
 export interface Api {
   mode: "supabase" | "demo";
@@ -42,6 +51,10 @@ export interface Api {
   seuilsHuile(): Promise<SeuilsHuile>;
   anomaliesOuvertes(): Promise<Anomalie[]>;
   fournisseurs(): Promise<Fournisseur[]>;
+  /** Siège : compte connecté avec le rôle « siege » (tableau de bord au lieu de l'écran tablette). */
+  estSiege(): Promise<boolean>;
+  tableauSiege(jours: number): Promise<LigneSiege[]>;
+  fournisseursNonConformes(jours: number): Promise<FournisseurNC[]>;
   /** Écritures : appelées uniquement par la file d'envoi, et rejouables sans doublon. */
   executer(op: Operation): Promise<void>;
   televerserPhoto(chemin: string, blob: Blob): Promise<void>;
