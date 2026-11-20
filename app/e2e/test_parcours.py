@@ -24,16 +24,49 @@ def test_releve_avec_hors_seuil(page):
     page.wait_for_selector(".task.faite:has-text('Relevé températures du matin')", timeout=3000)
 
 def test_huile_rouge_exige_une_decision(page):
+    """Démo : F1 jour 6, F2 jour 13, F3 au 15e jour (au-delà de 14 j), F4 jour 3."""
     connecter(page)
     page.click("text=Mesure de l'huile")
+    page.wait_for_selector("text=huile : jour 15/14")
     saisir(page, page.locator("button.val").nth(0), "12")
     saisir(page, page.locator("button.val").nth(1), "26")
+    saisir(page, page.locator("button.val").nth(2), "10")
     assert page.locator(".pill.bad:has-text('Interdite')").count() == 1
-    assert page.locator("text=Valider la mesure").is_disabled()
+    assert page.locator("text=huile utilisée depuis 15 jours").count() == 1, "F3 : changement imposé par l'âge malgré 10 %"
+    bouton = page.locator("button.bigbtn")
+    assert bouton.is_disabled() and "Décision" in bouton.inner_text()
     page.click("text=Huile changée (25 L) >> nth=1")
-    page.click("text=Valider la mesure")
+    page.click("text=Je change avant le service >> nth=1")   # F3 (la 1re est F2)
+    page.click("text=Non utilisée aujourd'hui ?")
+    assert bouton.inner_text() == "Valider la mesure"
+    bouton.click()
     page.wait_for_selector(".home")
     page.wait_for_selector(".task.faite:has-text(\"Mesure de l'huile\")", timeout=3000)
+
+def test_huile_friteuses_en_plusieurs_fois(page):
+    connecter(page)
+    page.click("text=Mesure de l'huile")
+    saisir(page, page.locator("button.val").nth(0), "10")
+    bouton = page.locator("button.bigbtn")
+    assert "3 friteuses restera à faire" in bouton.inner_text()
+    bouton.click()
+    page.wait_for_selector(".home")
+    assert "reste à faire : Friteuse 2, Friteuse 3, Friteuse 4" in page.locator("#toast").inner_text()
+    assert page.locator(".task.faite:has-text(\"Mesure de l'huile\")").count() == 0, "tâche encore ouverte"
+    page.click("text=Mesure de l'huile")
+    page.wait_for_selector(".row.fait:has-text('Friteuse 1')")
+    assert page.locator("button.val").count() == 3, "la friteuse déjà faite n'est plus redemandée"
+    page.locator("text=Non utilisée aujourd'hui ?").nth(0).click()   # F2 éteinte
+    saisir(page, page.locator("button.val").nth(0), "11")            # F3 (15e jour)
+    page.click("text=Huile changée (25 L)")
+    saisir(page, page.locator("button.val").nth(1), "9")             # F4
+    bouton.click()
+    page.wait_for_selector(".home")
+    page.wait_for_selector(".task.faite:has-text(\"Mesure de l'huile\")", timeout=3000)
+    page.click("text=Mesure de l'huile")
+    page.wait_for_selector("text=Toutes les friteuses sont faites pour aujourd'hui.")
+    assert page.locator(".row.fait:has-text('Non utilisée aujourd')").count() == 1
+    assert page.locator(".row.fait:has-text('jour 1/14')").count() == 1, "F3 : nouvelle huile, compteur remis à 1"
 
 def test_enceinte_hors_service(page):
     connecter(page)

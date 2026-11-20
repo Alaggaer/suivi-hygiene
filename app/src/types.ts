@@ -8,7 +8,12 @@ export interface Site { id: string; nom: string; ville: string }
 export interface Profil { id: string; nom: string; role: Role }
 export interface Enceinte { id: string; nom: string; t_max: number }
 export interface Friteuse { id: string; nom: string; litres: number }
-export interface SeuilsHuile { orange: number; rouge: number }
+export interface SeuilsHuile { orange: number; rouge: number; jours_max?: number }
+/** Où en est chaque friteuse : jours d'utilisation de l'huile en place, et saisie déjà faite aujourd'hui. */
+export interface EtatFriteuse {
+  friteuse_id: string; jours_utilisation: number; dernier_changement: string | null;
+  aujourd_hui_at: string | null; aujourd_hui_polaires: number | null; aujourd_hui_non_utilisee: boolean | null;
+}
 
 export interface Tache {
   id: string;
@@ -49,6 +54,7 @@ export interface Api {
   enceintes(): Promise<Enceinte[]>;
   friteuses(): Promise<Friteuse[]>;
   seuilsHuile(): Promise<SeuilsHuile>;
+  etatFriteuses(): Promise<EtatFriteuse[]>;
   anomaliesOuvertes(): Promise<Anomalie[]>;
   fournisseurs(): Promise<Fournisseur[]>;
   /** Siège : compte connecté avec le rôle « siege » (tableau de bord au lieu de l'écran tablette). */

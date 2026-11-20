@@ -8,7 +8,7 @@ import type { Gravite } from "./types";
 interface Base { par: string; par_nom: string; at_client: string }
 
 export interface LigneReleve { id: string; enceinte_id: string; valeur: number; t_max: number; action?: string }
-export interface LigneHuile { id: string; friteuse_id: string; polaires: number | null; filtrage: boolean; changement: boolean; litres?: number }
+export interface LigneHuile { id: string; friteuse_id: string; polaires: number | null; filtrage: boolean; changement: boolean; litres?: number; non_utilisee?: boolean }
 export interface LigneAnomalie { id: string; source: string; categorie: string; gravite: Gravite; titre: string; photo?: string; ref_id?: string }
 
 export type Operation =

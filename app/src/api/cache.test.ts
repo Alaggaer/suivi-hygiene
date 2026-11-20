@@ -17,6 +17,7 @@ function faux(): Api & { reseau: boolean } {
     enceintes: async () => { panne(); return [{ id: "e1", nom: "CF+", t_max: 3 }]; },
     friteuses: async () => { panne(); return []; },
     seuilsHuile: async () => { panne(); return { orange: 20, rouge: 25 }; },
+    etatFriteuses: async () => { panne(); return []; },
     fournisseurs: async () => { panne(); return []; },
     anomaliesOuvertes: async () => { panne(); return []; },
     executer: async () => {}, televerserPhoto: async () => {},

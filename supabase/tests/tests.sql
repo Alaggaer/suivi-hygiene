@@ -124,6 +124,30 @@ do $$ declare r record; begin
   assert (select livraisons from fournisseurs_non_conformes(30) where fournisseur = 'Pomona') = 2, 'fournisseurs';
 end $$;
 
+-- huile : compteur de jours d'utilisation depuis le dernier changement, « non utilisée » ne compte pas
+insert into friteuses(id,site_id,nom,litres) values ('00000000-0000-0000-0000-0000000000b1','00000000-0000-0000-0000-000000000001','Friteuse 1',25),
+  ('00000000-0000-0000-0000-0000000000b2','00000000-0000-0000-0000-000000000001','Friteuse 2',25);
+insert into huiles(site_id,friteuse_id,polaires,changement,non_utilisee,par,at) values
+  ('00000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-0000000000b1',8,  true, false,'00000000-0000-0000-0000-0000000000a1', now() - interval '5 days'),
+  ('00000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-0000000000b1',12, false,false,'00000000-0000-0000-0000-0000000000a1', now() - interval '4 days'),
+  ('00000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-0000000000b1',null,false,true, '00000000-0000-0000-0000-0000000000a1', now() - interval '3 days'),
+  ('00000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-0000000000b1',15, false,false,'00000000-0000-0000-0000-0000000000a1', now() - interval '2 days'),
+  ('00000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-0000000000b1',16, false,false,'00000000-0000-0000-0000-0000000000a1', now() - interval '2 days'),
+  ('00000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-0000000000b2',null,false,true, '00000000-0000-0000-0000-0000000000a1', now());
+do $$ declare r record; begin
+  select * into r from etat_friteuses() where friteuse_id = '00000000-0000-0000-0000-0000000000b1';
+  assert r.jours_utilisation = 3, format('friteuse 1 : 3 jours utilisés (changement, J+1, J+3), obtenu %s', r.jours_utilisation);
+  assert r.dernier_changement is not null, 'date du dernier changement connue';
+  assert r.aujourd_hui_at is null, 'friteuse 1 pas encore faite aujourd''hui';
+  select * into r from etat_friteuses() where friteuse_id = '00000000-0000-0000-0000-0000000000b2';
+  assert r.jours_utilisation = 0 and r.aujourd_hui_non_utilisee, 'friteuse 2 : non utilisée aujourd''hui, 0 jour';
+  assert (select valeur->>'jours_max' from reglages where cle = 'huile') = '14', 'durée max 14 j réglée';
+  begin
+    insert into huiles(site_id,friteuse_id,polaires,non_utilisee,par) values ('00000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-0000000000b2',18,true,'00000000-0000-0000-0000-0000000000a1');
+    raise exception 'ÉCHEC : « non utilisée » avec une mesure acceptée';
+  exception when check_violation then null; end;
+end $$;
+
 -- règles d'accès : une tablette ne voit que son site
 create role tablette in role authenticated; grant usage on schema public, auth to tablette; grant select, insert, update on all tables in schema public to tablette;
 grant select on auth.claims to tablette; grant execute on all functions in schema auth to tablette;

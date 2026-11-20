@@ -45,7 +45,7 @@ export function Accueil({ taches, anomalies, onTache, onAller }: {
         <p className="kpi">Aujourd'hui : <b>{aLheure} tâche{aLheure > 1 ? "s" : ""} faite{aLheure > 1 ? "s" : ""} à l'heure</b> sur {taches.length} · indicateur suivi par le siège</p>
       </section>
       <section className="actions">
-        <button className="act main" onClick={() => onAller("produit")}><b>Produit utilisé</b><span>Photo de l'étiquette, puis la famille</span></button>
+        <button className="act main" onClick={() => onAller("produit")}><b>Traçabilité produits</b><span>Photo de l'étiquette, puis la famille</span></button>
         <button className="act" onClick={() => onAller("livraison")}><b>Livraison</b><span>Températures, BL, conformité</span></button>
         <button className="act" onClick={() => onAller("minuteur")}><b>Minuteur</b><span>Refroidissement, remise en T°</span></button>
         <button className="act" onClick={() => onAller("releves")}><b>Températures</b><span>Relevé hors planning</span></button>

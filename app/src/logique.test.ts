@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  cheminPhoto, etatTache, MIN, niveauEscalade, niveauHuile, service, tachesALheure,
+  cheminPhoto, etatAvecEnAttente, etatTache, jourHuile, MIN, niveauAgeHuile, niveauEscalade, niveauHuile, service, tachesALheure,
   temperatureConforme, temperaturesLivraisonOk, trierTaches,
 } from "./logique";
 
@@ -43,6 +43,38 @@ describe("seuils", () => {
     expect(temperatureConforme(3.1, 3)).toBe(false);
     expect(temperatureConforme(-20, -18)).toBe(true);
     expect(temperatureConforme(-15, -18)).toBe(false);
+  });
+  it("huile : compteur de jours de la même huile", () => {
+    const e = (j: number, at: string | null = null, off: boolean | null = null) => ({ jours_utilisation: j, aujourd_hui_at: at, aujourd_hui_non_utilisee: off });
+    expect(jourHuile(undefined)).toBe(1);
+    expect(jourHuile(e(5))).toBe(6);                       // pas encore saisie aujourd'hui : aujourd'hui sera le 6e jour
+    expect(jourHuile(e(6, "2026-11-20T10:00:00Z"))).toBe(6); // déjà saisie aujourd'hui : déjà comptée
+    expect(jourHuile(e(5, "2026-11-20T10:00:00Z", true))).toBe(6); // marquée non utilisée puis finalement utilisée
+    expect(jourHuile(e(0))).toBe(1);
+    expect(niveauAgeHuile(12)).toBe("ok");
+    expect(niveauAgeHuile(13)).toBe("warn");
+    expect(niveauAgeHuile(14)).toBe("warn");               // 14e jour : encore autorisé, dernier jour
+    expect(niveauAgeHuile(15)).toBe("bad");                // au-delà de 14 j : changement obligatoire
+    expect(niveauAgeHuile(8, 7)).toBe("bad");              // réglage siège différent
+  });
+  it("huile : les mesures en attente d'envoi comptent, sans double compte", () => {
+    const base = [
+      { friteuse_id: "a", jours_utilisation: 5, dernier_changement: null, aujourd_hui_at: null, aujourd_hui_polaires: null, aujourd_hui_non_utilisee: null },
+      { friteuse_id: "b", jours_utilisation: 15, dernier_changement: null, aujourd_hui_at: null, aujourd_hui_polaires: null, aujourd_hui_non_utilisee: null },
+      { friteuse_id: "c", jours_utilisation: 2, dernier_changement: null, aujourd_hui_at: null, aujourd_hui_polaires: null, aujourd_hui_non_utilisee: null },
+    ];
+    const op = (lignes: object[]) => ({ type: "huile", at_client: "2026-11-20T10:00:00Z", lignes });
+    const r = etatAvecEnAttente(base, [
+      op([{ friteuse_id: "a", polaires: 12, changement: false }]),
+      op([{ friteuse_id: "a", polaires: 13, changement: false }]),          // 2e mesure le même jour : pas de double compte
+      op([{ friteuse_id: "b", polaires: 10, changement: true }]),
+      op([{ friteuse_id: "c", polaires: null, changement: false, non_utilisee: true }]),
+      { type: "releves", at_client: "2026-11-20T10:00:00Z" },
+    ]);
+    expect(r.map((e) => e.jours_utilisation)).toEqual([6, 1, 2]);
+    expect(r[0].aujourd_hui_polaires).toBe(13);
+    expect(r[2].aujourd_hui_non_utilisee).toBe(true);
+    expect(base[0].jours_utilisation).toBe(5);                               // l'état serveur n'est pas modifié
   });
   it("huile : vert, orange, rouge à 25 %", () => {
     const s = { orange: 20, rouge: 25 };

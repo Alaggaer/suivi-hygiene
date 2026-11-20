@@ -27,7 +27,7 @@ def test_livraison_non_conforme_lance_le_minuteur_de_rangement(page):
 
 def test_produit_utilise_photo_puis_famille(page):
     connecter(page)
-    page.click(".act:has-text('Produit utilisé')")
+    page.click(".act:has-text('Traçabilité produits')")
     assert page.locator("button.opt.big:has-text('Viande')").is_disabled()
     photographier(page)
     page.click("button.opt.big:has-text('Viande')")

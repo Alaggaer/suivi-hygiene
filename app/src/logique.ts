@@ -1,5 +1,5 @@
 /** Règles métier pures (sans écran ni serveur) : ce sont elles que les tests unitaires vérifient. */
-import type { SeuilsHuile, Tache } from "./types";
+import type { EtatFriteuse, SeuilsHuile, Tache } from "./types";
 
 export const MIN = 60_000;
 
@@ -34,6 +34,42 @@ export function niveauHuile(polaires: number, s: SeuilsHuile): NiveauHuile {
   if (polaires >= s.rouge) return "bad";
   if (polaires >= s.orange) return "warn";
   return "ok";
+}
+
+/** Durée maximale d'une même huile (jours d'utilisation), sauf réglage contraire du siège. */
+export const JOURS_HUILE_MAX = 14;
+/** N° du jour d'utilisation de l'huile en place si la friteuse sert aujourd'hui (aujourd'hui compte déjà s'il a été saisi). */
+export function jourHuile(e: Pick<EtatFriteuse, "jours_utilisation" | "aujourd_hui_at" | "aujourd_hui_non_utilisee"> | undefined): number {
+  if (!e) return 1;
+  const dejaCompte = !!e.aujourd_hui_at && !e.aujourd_hui_non_utilisee;
+  return dejaCompte ? Math.max(1, e.jours_utilisation) : e.jours_utilisation + 1;
+}
+/** Âge de l'huile : au-delà du maximum, changement obligatoire ; les 2 derniers jours, prévenir. */
+export function niveauAgeHuile(jour: number, max = JOURS_HUILE_MAX): NiveauHuile {
+  if (jour > max) return "bad";
+  if (jour >= max - 1) return "warn";
+  return "ok";
+}
+
+/**
+ * Ajoute à l'état des friteuses les mesures d'huile encore en attente d'envoi (tablette hors ligne ou envoi en cours),
+ * pour ne pas redemander une friteuse déjà faite. Même règle que le serveur : un changement remet le compteur à 1,
+ * « non utilisée » ne compte pas, un même jour ne compte qu'une fois.
+ */
+export function etatAvecEnAttente(etat: EtatFriteuse[], ops: { type: string; at_client: string; lignes?: unknown }[]): EtatFriteuse[] {
+  const r = etat.map((e) => ({ ...e }));
+  for (const op of ops) {
+    if (op.type !== "huile") continue;
+    for (const l of op.lignes as { friteuse_id: string; polaires: number | null; changement: boolean; non_utilisee?: boolean }[]) {
+      const e = r.find((x) => x.friteuse_id === l.friteuse_id);
+      if (!e) continue;
+      const dejaCompte = !!e.aujourd_hui_at && !e.aujourd_hui_non_utilisee;
+      if (l.changement) { e.jours_utilisation = 1; e.dernier_changement = op.at_client; }
+      else if (!l.non_utilisee && !dejaCompte) e.jours_utilisation++;
+      e.aujourd_hui_at = op.at_client; e.aujourd_hui_polaires = l.polaires; e.aujourd_hui_non_utilisee = !!l.non_utilisee;
+    }
+  }
+  return r;
 }
 
 /** Seuils de réception (camion et produits frais ≤ +4 °C, surgelés ≤ −18 °C). */

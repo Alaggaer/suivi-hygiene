@@ -1,4 +1,4 @@
-import type { Api, Anomalie, Profil, Tache } from "../types";
+import type { Api, Anomalie, EtatFriteuse, Profil, Tache } from "../types";
 import { ErreurDefinitive, type Operation } from "../operations";
 import { transitionPermise } from "../logique";
 
@@ -30,6 +30,14 @@ const SITES_DEMO = [
   ["PHOENIX", "SARAN"], ["SITE 10", "À COMPLÉTER"], ["SITE 11", "À COMPLÉTER"], ["SITE 12", "À COMPLÉTER"],
   ["SITE 13", "À COMPLÉTER"], ["SITE 14", "À COMPLÉTER"], ["SITE 15", "À COMPLÉTER"],
 ];
+/** Huile des friteuses de démo : jours déjà utilisés (F2 bientôt au maximum, F3 au-delà de 14 j). */
+const JOUR = 24 * 60 * MIN;
+const etatHuile: EtatFriteuse[] = [
+  { friteuse_id: "f1", jours_utilisation: 5, dernier_changement: iso(t0 - 5 * JOUR), aujourd_hui_at: null, aujourd_hui_polaires: null, aujourd_hui_non_utilisee: null },
+  { friteuse_id: "f2", jours_utilisation: 12, dernier_changement: iso(t0 - 13 * JOUR), aujourd_hui_at: null, aujourd_hui_polaires: null, aujourd_hui_non_utilisee: null },
+  { friteuse_id: "f3", jours_utilisation: 14, dernier_changement: iso(t0 - 16 * JOUR), aujourd_hui_at: null, aujourd_hui_polaires: null, aujourd_hui_non_utilisee: null },
+  { friteuse_id: "f4", jours_utilisation: 2, dernier_changement: iso(t0 - 3 * JOUR), aujourd_hui_at: null, aujourd_hui_polaires: null, aujourd_hui_non_utilisee: null },
+];
 /** Ce que le serveur simulé a reçu (identifiants déjà vus : un envoi rejoué est ignoré, comme sur le vrai serveur). */
 export const recuDemo = { ids: new Set<string>(), photos: new Map<string, Blob>(), livraisons: 0, utilisations: 0 };
 const attendre = <T,>(v: T) => new Promise<T>((r) => setTimeout(() => r(v), 80));
@@ -53,8 +61,9 @@ export const demoApi: Api = {
     { id: "e5", nom: "Frigo desserts", t_max: 4 },
     { id: "e6", nom: "Congélateur poste froid", t_max: -18 },
   ]),
-  friteuses: () => attendre([{ id: "f1", nom: "Friteuse 1", litres: 25 }, { id: "f2", nom: "Friteuse 2", litres: 25 }]),
-  seuilsHuile: () => attendre({ orange: 20, rouge: 25 }),
+  friteuses: () => attendre([1, 2, 3, 4].map((i) => ({ id: `f${i}`, nom: `Friteuse ${i}`, litres: 25 }))),
+  seuilsHuile: () => attendre({ orange: 20, rouge: 25, jours_max: 14 }),
+  etatFriteuses: () => attendre(etatHuile.map((e) => ({ ...e }))),
   fournisseurs: () => attendre(["Transgourmet", "Pomona", "Metro", "Brake", "Boucherie (viandes)", "Boulangerie"].map((nom, i) => ({ id: `f${i}`, nom }))),
   estSiege: async () => typeof location !== "undefined" && (location.hash === "#siege" || new URLSearchParams(location.search).has("siege")),
   tableauSiege: async (jours) => SITES_DEMO.map((s, i) => {
@@ -99,9 +108,21 @@ export const demoApi: Api = {
           if (nouveau(a.id)) anomalies.unshift({ id: a.id, titre: a.titre, categorie: a.categorie, gravite: a.gravite, statut: "ouverte", cree_at: op.at_client });
         });
         break;
-      case "releves": case "huile":
+      case "releves":
         op.lignes.forEach((l) => nouveau(l.id));
         terminer(op.tache_id);   // comme le vrai serveur : la saisie clôt la tâche
+        break;
+      case "huile":
+        op.lignes.forEach((l) => {
+          if (!nouveau(l.id)) return;
+          const e = etatHuile.find((x) => x.friteuse_id === l.friteuse_id);
+          if (!e) return;
+          const dejaCompte = !!e.aujourd_hui_at && !e.aujourd_hui_non_utilisee;
+          if (l.changement) { e.jours_utilisation = 1; e.dernier_changement = op.at_client; }
+          else if (!l.non_utilisee && !dejaCompte) e.jours_utilisation++;
+          e.aujourd_hui_at = op.at_client; e.aujourd_hui_polaires = l.polaires; e.aujourd_hui_non_utilisee = !!l.non_utilisee;
+        });
+        terminer(op.tache_id);   // la tablette n'envoie la tâche que lorsque toutes les friteuses sont faites
         break;
       case "livraison": if (nouveau(op.id)) recuDemo.livraisons++; break;
       case "utilisation": if (nouveau(op.id)) recuDemo.utilisations++; break;

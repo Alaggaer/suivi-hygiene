@@ -1,5 +1,5 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
-import type { Anomalie, Api, Fournisseur, FournisseurNC, LigneSiege, Site, Tache } from "../types";
+import type { Anomalie, Api, EtatFriteuse, Fournisseur, FournisseurNC, LigneSiege, SeuilsHuile, Site, Tache } from "../types";
 import { ErreurDefinitive, type Operation } from "../operations";
 
 /**
@@ -63,8 +63,12 @@ export function supabaseApi(url: string, cleAnon: string): Api {
         .map((f) => ({ ...f, litres: Number(f.litres) }));
     },
     async seuilsHuile() {
-      const r = ok(await sb.from("reglages").select("valeur").eq("cle", "huile").single()) as { valeur: { orange: number; rouge: number } };
+      const r = ok(await sb.from("reglages").select("valeur").eq("cle", "huile").single()) as { valeur: SeuilsHuile };
       return r.valeur;
+    },
+    async etatFriteuses() {
+      return (ok(await sb.rpc("etat_friteuses")) as (EtatFriteuse & { aujourd_hui_polaires: string | number | null })[])
+        .map((e) => ({ ...e, aujourd_hui_polaires: e.aujourd_hui_polaires === null ? null : Number(e.aujourd_hui_polaires) }));
     },
     async estSiege() {
       const { data } = await sb.auth.getSession();

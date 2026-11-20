@@ -106,7 +106,7 @@ export default function App({ api, file }: { api: Api; file: FileEnvoi }) {
   else if (!site) corps = <p className="hint">{erreur ?? "Chargement du restaurant…"}</p>;
   else if (!profil) corps = <Connexion api={api} onConnecte={(p) => { setProfil(p); toast(`Bonjour ${p.nom}`); }} />;
   else if (ecran.nom === "releves") corps = <Releves tache={ecran.tache} onFini={retour} />;
-  else if (ecran.nom === "huile") corps = <Huile tache={ecran.tache} onFini={retour} />;
+  else if (ecran.nom === "huile") corps = <Huile tache={ecran.tache} onFini={retour} enAttente={entrees} />;
   else if (ecran.nom === "livraison") corps = <Livraison onFini={retour} lancerMinuteur={minuteurs.ajouter} />;
   else if (ecran.nom === "produit") corps = <Produit onFini={retour} />;
   else if (ecran.nom === "anomalies") corps = <Anomalies anomalies={anomalies} onRetour={retour} />;

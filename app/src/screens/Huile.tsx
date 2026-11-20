@@ -1,18 +1,32 @@
 import { useEffect, useState } from "react";
-import type { Friteuse, SeuilsHuile, Tache } from "../types";
+import type { EtatFriteuse, Friteuse, SeuilsHuile, Tache } from "../types";
 import { nouvelId, useContexte, useEnregistrer } from "../contexte";
 import { PaveNumerique, pct, useToast } from "../ui/outils";
-import { niveauHuile } from "../logique";
+import { etatAvecEnAttente, JOURS_HUILE_MAX, jourHuile, niveauAgeHuile, niveauHuile } from "../logique";
+import type { Entree } from "../hors-ligne/stockage";
 
 type Changement = "fait" | "plus-tard";
+const basculer = (c: Record<string, Changement>, id: string, v: Changement) => {
+  const n = { ...c };
+  if (n[id] === v) delete n[id]; else n[id] = v;
+  return n;
+};
 
-export function Huile({ tache, onFini }: { tache?: Tache; onFini: () => void }) {
+/**
+ * Mesure de l'huile, friteuse par friteuse :
+ * - on peut valider avec des friteuses manquantes (elles restent à faire, la tâche reste ouverte) ;
+ * - une friteuse éteinte se déclare « non utilisée aujourd'hui » ;
+ * - le compteur de jours de la même huile impose un changement au-delà du maximum (14 j par défaut).
+ */
+export function Huile({ tache, onFini, enAttente = [] }: { tache?: Tache; onFini: () => void; enAttente?: Entree[] }) {
   const toast = useToast();
   const { api } = useContexte();
   const enregistrer = useEnregistrer();
   const [friteuses, setFriteuses] = useState<Friteuse[]>([]);
   const [seuils, setSeuils] = useState<SeuilsHuile>({ orange: 20, rouge: 25 });
+  const [etat, setEtat] = useState<Record<string, EtatFriteuse>>({});
   const [vals, setVals] = useState<Record<string, number>>({});
+  const [eteinte, setEteinte] = useState<Record<string, boolean>>({});
   const [filtrage, setFiltrage] = useState<Record<string, boolean>>({});
   const [chg, setChg] = useState<Record<string, Changement>>({});
   const [pave, setPave] = useState<Friteuse | null>(null);
@@ -20,59 +34,125 @@ export function Huile({ tache, onFini }: { tache?: Tache; onFini: () => void }) 
   const [erreur, setErreur] = useState<string | null>(null);
 
   useEffect(() => {
-    Promise.all([api.friteuses(), api.seuilsHuile()]).then(([f, s]) => { setFriteuses(f); setSeuils(s); }).catch((e) => setErreur(e.message));
+    Promise.all([api.friteuses(), api.seuilsHuile(), api.etatFriteuses().catch(() => [] as EtatFriteuse[])])
+      .then(([f, s, e]) => {
+        setFriteuses(f); setSeuils(s);
+        const attente = enAttente.filter((x) => x.statut === "attente").map((x) => x.op);
+        setEtat(Object.fromEntries(etatAvecEnAttente(e, attente).map((x) => [x.friteuse_id, x])));
+      })
+      .catch((e) => setErreur(e.message));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [api]);
 
-  const niveau = (v: number) => niveauHuile(v, seuils);
-  const complet = friteuses.length > 0 && friteuses.every((f) => vals[f.id] !== undefined && (niveau(vals[f.id]) !== "bad" || chg[f.id]));
+  const max = seuils.jours_max ?? JOURS_HUILE_MAX;
+  const dejaFaite = (f: Friteuse) => !!etat[f.id]?.aujourd_hui_at;
+  const aFaire = friteuses.filter((f) => !dejaFaite(f));
+  const saisie = (f: Friteuse) => vals[f.id] !== undefined || !!eteinte[f.id];
+  /** Raison d'un changement obligatoire, ou null. */
+  const obligation = (f: Friteuse): string | null => {
+    if (vals[f.id] === undefined) return null;
+    if (niveauHuile(vals[f.id], seuils) === "bad") return `${pct(vals[f.id])} de composés polaires`;
+    if (niveauAgeHuile(jourHuile(etat[f.id]), max) === "bad") return `huile utilisée depuis ${jourHuile(etat[f.id])} jours (max ${max})`;
+    return null;
+  };
+  const saisies = aFaire.filter(saisie);
+  const restantes = aFaire.filter((f) => !saisie(f));
+  const decisionsOk = saisies.every((f) => !obligation(f) || chg[f.id]);
+  const possible = saisies.length > 0 && decisionsOk;
 
   async function valider() {
     setEnvoi(true); setErreur(null);
     try {
-      const lignes = friteuses.map((f) => ({
-        id: nouvelId(), friteuse_id: f.id, polaires: vals[f.id], filtrage: !!filtrage[f.id],
-        changement: chg[f.id] === "fait", litres: chg[f.id] === "fait" ? f.litres : undefined,
-      }));
-      await enregistrer({ type: "huile", tache_id: tache?.id, lignes });
-      const anomalies = friteuses.filter((f) => chg[f.id] === "plus-tard").map((f) => ({
+      const lignes = saisies.map((f) => eteinte[f.id]
+        ? { id: nouvelId(), friteuse_id: f.id, polaires: null, filtrage: false, changement: false, non_utilisee: true }
+        : { id: nouvelId(), friteuse_id: f.id, polaires: vals[f.id], filtrage: !!filtrage[f.id],
+            changement: chg[f.id] === "fait", litres: chg[f.id] === "fait" ? f.litres : undefined });
+      // La tâche n'est close que lorsque toutes les friteuses ont été faites aujourd'hui.
+      await enregistrer({ type: "huile", tache_id: restantes.length ? undefined : tache?.id, lignes });
+      const anomalies = saisies.filter((f) => chg[f.id] === "plus-tard").map((f) => ({
         id: nouvelId(), source: "huile", categorie: "Huile", gravite: "majeure" as const,
-        titre: `${f.nom} à ${pct(vals[f.id])} de composés polaires · changement à faire avant le service`,
+        titre: `${f.nom} : ${obligation(f)} · changement à faire avant le service`,
         ref_id: lignes.find((l) => l.friteuse_id === f.id)!.id,
       }));
       if (anomalies.length) await enregistrer({ type: "anomalies", lignes: anomalies });
-      toast("Mesure de l'huile enregistrée");
+      toast(restantes.length
+        ? `Enregistré · reste à faire : ${restantes.map((f) => f.nom).join(", ")}`
+        : "Mesure de l'huile enregistrée");
       onFini();
     } catch (e) { setErreur((e as Error).message); setEnvoi(false); }
   }
 
   const LIB = { ok: "Bonne", warn: "À changer bientôt", bad: "Interdite · à changer", none: "À mesurer" };
+  const libelleBouton = envoi ? "Enregistrement…"
+    : !saisies.length ? "Saisissez au moins une friteuse"
+    : !decisionsOk ? "Décision à prendre sur une huile"
+    : restantes.length ? `Valider (${restantes.length} friteuse${restantes.length > 1 ? "s" : ""} restera à faire)`
+    : "Valider la mesure";
+
   return (
     <div className="screen">
       <button className="back" onClick={onFini}>← Retour</button>
       <h1>Mesure de l'huile</h1>
-      <p className="hint">Plongez le testeur de polarité dans chaque friteuse et tapez le % de composés polaires affiché.</p>
+      <p className="hint">Plongez le testeur de polarité dans chaque friteuse et tapez le % affiché. Vous pouvez valider les friteuses au fur et à mesure.</p>
       <div className="rows">
         {friteuses.map((f) => {
-          const v = vals[f.id], a = v !== undefined, n = a ? niveau(v) : "none";
+          const e = etat[f.id];
+          if (dejaFaite(f)) {
+            const h = new Date(e!.aujourd_hui_at!).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
+            return (
+              <div key={f.id} className="row fait">
+                <span><span className="n">{f.nom}</span><br /><span className="seuil">Faite à {h}</span></span>
+                <span className="pill ok">{e!.aujourd_hui_non_utilisee ? "Non utilisée aujourd'hui" : `${pct(e!.aujourd_hui_polaires ?? 0)} · jour ${Math.max(1, e!.jours_utilisation)}/${max}`}</span>
+              </div>
+            );
+          }
+          const off = !!eteinte[f.id];
+          const v = vals[f.id], a = v !== undefined, n = a ? niveauHuile(v, seuils) : "none";
+          const jour = jourHuile(e), age = niveauAgeHuile(jour, max);
+          const oblig = obligation(f);
+          const cls = off ? "off" : oblig ? "bad" : (n === "warn" || age !== "ok") ? "warn" : "";
           return (
-            <div key={f.id} className={`row ${n === "bad" ? "bad" : n === "warn" ? "warn" : ""}`}>
-              <span><span className="n">{f.nom}</span><br /><span className="seuil">{f.litres} L · vert sous {seuils.orange} %, interdit à {seuils.rouge} %</span></span>
-              <span className={`pill ${n}`}>{LIB[n]}</span>
-              <button className={`val num ${a ? "filled" : ""}`} onClick={() => setPave(f)}>{a ? pct(v) : "Saisir"}</button>
+            <div key={f.id} className={`row ${cls}`}>
+              <span>
+                <span className="n">{f.nom}</span><br />
+                <span className="seuil">
+                  {f.litres} L · <b className={age === "bad" ? "txt-bad" : age === "warn" ? "txt-warn" : ""}>huile : jour {jour}/{max}</b>
+                  {e && !e.dernier_changement && " (aucun changement enregistré)"}
+                </span>
+                {!a && (<><br />
+                  <button className="lien" onClick={() => setEteinte({ ...eteinte, [f.id]: !off })}>
+                    {off ? "Finalement, elle est utilisée" : "Non utilisée aujourd'hui ?"}
+                  </button></>
+                )}
+              </span>
+              {off ? <span className="pill none">Non utilisée aujourd'hui</span>
+                : a && n !== "bad" && age === "bad" ? <span className="pill bad">Trop vieille · à changer</span>
+                : <span className={`pill ${n}`}>{LIB[n]}</span>}
+              {!off && <button className={`val num ${a ? "filled" : ""}`} onClick={() => setPave(f)}>{a ? pct(v) : "Saisir"}</button>}
               {a && (
                 <div className="fix" style={{ borderTopColor: "var(--line)" }}>
-                  {n === "bad" && <p>Huile impropre à la consommation : changement obligatoire avant le service.</p>}
+                  {oblig && <p>Changement obligatoire avant le service : {oblig}.</p>}
+                  {!oblig && age === "warn" && <p className="info">Dernier{jour === max ? "" : "s"} jour{jour === max ? "" : "s"} pour cette huile : à changer au plus tard après le jour {max}.</p>}
                   <button className={`opt ${filtrage[f.id] ? "sel" : ""}`} onClick={() => setFiltrage({ ...filtrage, [f.id]: !filtrage[f.id] })}>Filtrage fait</button>
-                  <button className={`opt ${chg[f.id] === "fait" ? "sel" : ""}`} onClick={() => setChg({ ...chg, [f.id]: "fait" })}>Huile changée ({f.litres} L)</button>
-                  {n === "bad" && <button className={`opt ${chg[f.id] === "plus-tard" ? "sel" : ""}`} onClick={() => setChg({ ...chg, [f.id]: "plus-tard" })}>Je change avant le service</button>}
+                  <button className={`opt ${chg[f.id] === "fait" ? "sel" : ""}`} onClick={() => setChg(basculer(chg, f.id, "fait"))}>Huile changée ({f.litres} L)</button>
+                  {oblig && <button className={`opt ${chg[f.id] === "plus-tard" ? "sel" : ""}`} onClick={() => setChg({ ...chg, [f.id]: "plus-tard" })}>Je change avant le service</button>}
+                  {chg[f.id] === "fait" && <p className="seuil">Nouvelle huile : le compteur repart au jour 1.</p>}
                 </div>
               )}
             </div>
           );
         })}
       </div>
+      {friteuses.length > 0 && !aFaire.length && <p className="pill ok">Toutes les friteuses sont faites pour aujourd'hui.</p>}
+      {friteuses.length > 0 && !aFaire.length && tache && !tache.faite_at && (
+        <button className="bigbtn" disabled={envoi} onClick={async () => {
+          setEnvoi(true);
+          try { await enregistrer({ type: "terminer_tache", tache_id: tache.id }); toast("Tâche close"); onFini(); }
+          catch (e) { setErreur((e as Error).message); setEnvoi(false); }
+        }}>Clore la tâche</button>
+      )}
       {erreur && <p className="pill bad">{erreur}</p>}
-      <button className="bigbtn" disabled={!complet || envoi} onClick={valider}>{envoi ? "Enregistrement…" : "Valider la mesure"}</button>
+      {aFaire.length > 0 && <button className="bigbtn" disabled={!possible || envoi} onClick={valider}>{libelleBouton}</button>}
       {pave && <PaveNumerique titre={`${pave.nom} · composés polaires`} unite="%" signe={false} onFermer={() => setPave(null)} onValider={(v) => { setVals({ ...vals, [pave.id]: v }); setPave(null); }} />}
     </div>
   );

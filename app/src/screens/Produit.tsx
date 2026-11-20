@@ -6,7 +6,7 @@ import { useToast } from "../ui/outils";
 
 const FAMILLES = ["Viande", "Poisson", "Produit laitier", "Œufs", "Fruits et légumes", "Autre"];
 
-/** Produit utilisé : 1. photo de l'étiquette, 2. un tap sur la famille → c'est enregistré. */
+/** Traçabilité produits : 1. photo de l'étiquette, 2. un tap sur la famille → c'est enregistré. */
 const cleJour = () => `suivi-hygiene:produits:${new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Paris" }).format(Date.now())}`;
 function lireCompte(): number { try { return Number(localStorage.getItem(cleJour()) || 0); } catch { return 0; } }
 
@@ -35,7 +35,7 @@ export function Produit({ onFini }: { onFini: () => void }) {
   return (
     <div className="screen">
       <button className="back" onClick={onFini}>← Terminé</button>
-      <h1>Produit utilisé</h1>
+      <h1>Traçabilité produits</h1>
       <p className="hint">1. Photo de l'étiquette (lot et DLC lisibles). 2. Touchez la famille : c'est enregistré pour le service du {srv}. Vous pouvez enchaîner les produits.</p>
       <ChampPhoto texte="Photo de l'étiquette" photo={photo} onPhoto={setPhoto} demo={api.mode === "demo"} />
       <div className="opts">
