@@ -1,14 +1,7 @@
 import type { Anomalie, Tache } from "../types";
-import { duree, hm, MIN, useMaintenant } from "../ui/outils";
+import { duree, hm, useMaintenant } from "../ui/outils";
+import { etatTache, niveauEscalade, tachesALheure, trierTaches } from "../logique";
 
-export type EtatTache = "faite" | "retard" | "bientot" | "avenir";
-export function etatTache(t: Tache, maintenant: number): EtatTache {
-  if (t.faite_at) return "faite";
-  const d = Date.parse(t.echeance) - maintenant;
-  if (d < 0) return "retard";
-  return d <= 15 * MIN ? "bientot" : "avenir";
-}
-const ORDRE: Record<EtatTache, number> = { retard: 0, bientot: 1, avenir: 2, faite: 3 };
 const SOUS: Record<string, string> = {
   releves: "Toutes les enceintes", huile: "Chaque friteuse · testeur de polarité", dlc: "Chambres froides et réserve",
   nettoyage: "Fin de service", stock_carte: "Produits sortis de la carte", autre: "",
@@ -19,9 +12,9 @@ export function Accueil({ taches, anomalies, onTache, onAller }: {
   onTache: (t: Tache) => void; onAller: (ecran: "releves" | "huile" | "anomalies") => void;
 }) {
   const maintenant = useMaintenant(1000);
-  const liste = taches.slice().sort((a, b) => ORDRE[etatTache(a, maintenant)] - ORDRE[etatTache(b, maintenant)] || Date.parse(a.echeance) - Date.parse(b.echeance));
+  const liste = trierTaches(taches, maintenant);
   const faites = taches.filter((t) => t.faite_at);
-  const aLheure = faites.filter((t) => Date.parse(t.faite_at!) <= Date.parse(t.echeance)).length;
+  const aLheure = tachesALheure(taches);
 
   return (
     <div className="home">
@@ -37,7 +30,7 @@ export function Accueil({ taches, anomalies, onTache, onAller }: {
                 <span className="stripe" />
                 <span>
                   <span className="t">{t.titre}</span><br /><span className="s">{SOUS[t.type]}</span>
-                  {e === "retard" && <><br /><span className="esc">{retard >= 120 * MIN ? "Responsable de site prévenu" : retard >= 30 * MIN ? "Chef prévenu" : "À faire maintenant"}</span></>}
+                  {e === "retard" && <><br /><span className="esc">{{ responsable: "Responsable de site prévenu", chef: "Chef prévenu", aucune: "À faire maintenant" }[niveauEscalade(retard)]}</span></>}
                 </span>
                 <span className="when">
                   {e === "faite" && <><b>Faite</b>{hm(t.faite_at!)}{Date.parse(t.faite_at!) > Date.parse(t.echeance) && ` · +${duree(Date.parse(t.faite_at!) - Date.parse(t.echeance))}`} · {t.faite_par_nom}</>}

@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 
-export const MIN = 60_000;
+import { MIN } from "../logique";
+export { MIN };
 export const hm = (d: number | string) => new Date(d).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
 export function duree(ms: number) {
   const m = Math.max(0, Math.round(Math.abs(ms) / MIN));

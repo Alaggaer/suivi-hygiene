@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type { Api, Friteuse, NouvelleAnomalie, Profil, SeuilsHuile, Tache } from "../types";
 import { PaveNumerique, pct, useToast } from "../ui/outils";
+import { niveauHuile } from "../logique";
 
 type Changement = "fait" | "plus-tard";
 
@@ -19,7 +20,7 @@ export function Huile({ api, profil, tache, onFini }: { api: Api; profil: Profil
     Promise.all([api.friteuses(), api.seuilsHuile()]).then(([f, s]) => { setFriteuses(f); setSeuils(s); }).catch((e) => setErreur(e.message));
   }, [api]);
 
-  const niveau = (v: number) => (v >= seuils.rouge ? "bad" : v >= seuils.orange ? "warn" : "ok");
+  const niveau = (v: number) => niveauHuile(v, seuils);
   const complet = friteuses.length > 0 && friteuses.every((f) => vals[f.id] !== undefined && (niveau(vals[f.id]) !== "bad" || chg[f.id]));
 
   async function valider() {

@@ -7,7 +7,9 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "vitest run",
+    "test:e2e": "vite build && (vite preview --port 4173 --strictPort & echo $! > /tmp/preview.pid; sleep 2; cd e2e && python3 -m pytest -q; r=$?; kill $(cat /tmp/preview.pid); exit $r)"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.4",
@@ -22,9 +24,11 @@
     "eslint": "^9.13.0",
     "eslint-plugin-react-hooks": "^5.0.0",
     "eslint-plugin-react-refresh": "^0.4.14",
+    "fake-indexeddb": "^6.0.0",
     "globals": "^15.11.0",
     "typescript": "~5.6.2",
     "typescript-eslint": "^8.11.0",
-    "vite": "^5.4.10"
+    "vite": "^5.4.10",
+    "vitest": "^2.1.8"
   }
 }

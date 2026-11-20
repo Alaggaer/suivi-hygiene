@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type { Api, Enceinte, NouvelleAnomalie, Profil, Tache } from "../types";
 import { PaveNumerique, temp, useToast } from "../ui/outils";
+import { temperatureConforme } from "../logique";
 
 const ACTIONS = ["Thermostat réglé", "Porte mal fermée, refermée", "Denrées déplacées", "Denrées jetées", "Technicien appelé"];
 
@@ -15,7 +16,7 @@ export function Releves({ api, profil, tache, onFini }: { api: Api; profil: Prof
 
   useEffect(() => { api.enceintes().then(setEnceintes).catch((e) => setErreur(e.message)); }, [api]);
 
-  const horsSeuil = (e: Enceinte) => vals[e.id] !== undefined && vals[e.id] > e.t_max;
+  const horsSeuil = (e: Enceinte) => vals[e.id] !== undefined && !temperatureConforme(vals[e.id], e.t_max);
   const complet = enceintes.length > 0 && enceintes.every((e) => vals[e.id] !== undefined && (!horsSeuil(e) || fix[e.id]));
 
   async function valider() {
