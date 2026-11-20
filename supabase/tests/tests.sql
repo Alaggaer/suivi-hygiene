@@ -110,12 +110,13 @@ do $$ declare r record; begin
 end $$;
 
 -- règles d'accès : une tablette ne voit que son site
-create role tablette; grant usage on schema public, auth to tablette; grant select, insert, update on all tables in schema public to tablette;
-grant select on auth.claims to tablette; grant execute on all functions in schema public, auth to tablette;
+create role tablette in role authenticated; grant usage on schema public, auth to tablette; grant select, insert, update on all tables in schema public to tablette;
+grant select on auth.claims to tablette; grant execute on all functions in schema auth to tablette;
 update auth.claims set jwt = '{"app_metadata":{"role":"tablette","site_id":"00000000-0000-0000-0000-000000000002"}}';
 set role tablette;
 do $$ begin
   assert (select count(*) from releves) = 0, 'BOSTON ne voit pas les relevés de DALLAS';
+  assert (select count(*) from journal) = 0, 'le journal n''est pas lisible par une tablette';
   assert (select count(*) from taches) = 0, 'BOSTON ne voit pas les tâches de DALLAS';
   assert (select count(*) from profils_du_site()) = 1, 'BOSTON ne voit que ses employés';
   assert not verifier_pin('00000000-0000-0000-0000-0000000000a1','1234'), 'PIN d''un autre site refusé';
@@ -159,6 +160,10 @@ do $$ declare i int; begin
   exception when raise_exception then
     if sqlerrm like 'ÉCHEC%' then raise; end if;
   end;
+  begin
+    perform escalader();
+    raise exception 'ÉCHEC : une tablette lance les relances';
+  exception when insufficient_privilege then null; end;
   begin
     perform * from tableau_siege(7);
     raise exception 'ÉCHEC : une tablette lit le tableau du siège';

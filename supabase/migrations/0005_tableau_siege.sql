@@ -8,7 +8,7 @@ returns table (
   livraisons int, livraisons_nc int,
   huile_mesures int, huile_rouges int, huile_max numeric
 )
-language plpgsql stable security definer set search_path = public as $$
+language plpgsql stable security definer set search_path = public, extensions as $$
 declare debut date := (now() at time zone 'Europe/Paris')::date - (p_jours - 1);
 begin
   if not est_siege() then raise exception 'Réservé au siège' using errcode = '42501'; end if;
@@ -31,7 +31,7 @@ end $$;
 
 create function fournisseurs_non_conformes(p_jours int default 30)
 returns table (fournisseur text, livraisons int, non_conformes int)
-language sql stable security definer set search_path = public as $$
+language sql stable security definer set search_path = public, extensions as $$
   select f.nom, count(l.*)::int, count(l.*) filter (where not l.conforme)::int
   from fournisseurs f join livraisons l on l.fournisseur_id = f.id
   where est_siege() and l.at >= now() - make_interval(days => p_jours)

@@ -5,6 +5,10 @@ App tablette de suivi d'hygiène (HACCP) pour les restaurants du groupe, et tabl
 - `app/` : PWA React + TypeScript (Vite). Sans variables Supabase, elle tourne en **mode démonstration** (serveur simulé).
 - `supabase/migrations/` : schéma Postgres (RLS par site, aucune suppression possible, journal des modifications).
 
+## Supabase
+Projet `suivi-hygiene` (réf. `ldsxlovhueuzmhrzofjo`, région Paris `eu-west-3`), migrations 0001 à 0008 appliquées.
+Pour brancher l'app : `app/.env` avec `VITE_SUPABASE_URL=https://ldsxlovhueuzmhrzofjo.supabase.co` et la clé publique (`sb_publishable_…`).
+
 ## Lancer en local
 ```
 cd app && npm install && npm run dev

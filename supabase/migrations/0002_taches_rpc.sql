@@ -3,7 +3,7 @@
 
 create function taches_du_jour()
 returns table (id uuid, type type_tache, titre text, echeance timestamptz, faite_at timestamptz, faite_par_nom text, escalade smallint)
-language sql stable security definer set search_path = public as $$
+language sql stable security definer set search_path = public, extensions as $$
   select t.id, t.type, t.titre, t.echeance, t.faite_at, p.nom, t.escalade
   from taches t left join profils p on p.id = t.faite_par
   where t.jour = (now() at time zone 'Europe/Paris')::date
@@ -12,7 +12,7 @@ language sql stable security definer set search_path = public as $$
 $$;
 
 create function terminer_tache(p_tache uuid, p_profil uuid) returns void
-language plpgsql security definer set search_path = public as $$
+language plpgsql security definer set search_path = public, extensions as $$
 begin
   update taches set faite_at = now(), faite_par = p_profil
   where id = p_tache and faite_at is null

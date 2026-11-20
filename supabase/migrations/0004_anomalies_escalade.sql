@@ -3,7 +3,7 @@
 -- Ouverte → traitée (tout le monde) → vérifiée (chef, responsable, siège). Rejouer le même changement ne fait rien.
 create function changer_statut_anomalie(p_anomalie uuid, p_statut statut_anomalie, p_profil uuid,
                                         p_commentaire text default null, p_at_client timestamptz default null)
-returns void language plpgsql security definer set search_path = public as $$
+returns void language plpgsql security definer set search_path = public, extensions as $$
 declare a anomalies; r role_utilisateur; v_at timestamptz := now();
 begin
   select * into a from anomalies where id = p_anomalie and (est_siege() or site_id = mon_site());
@@ -38,7 +38,7 @@ alter table notifications enable row level security;
 create policy lire on notifications for select using (est_siege() or site_id = mon_site());
 
 -- Appelée toutes les 5 minutes (pg_cron). Ne crée chaque relance qu'une fois.
-create function escalader() returns int language plpgsql security definer set search_path = public as $$
+create function escalader() returns int language plpgsql security definer set search_path = public, extensions as $$
 declare n int := 0; k int; e jsonb; h jsonb;
 begin
   select valeur into e from reglages where cle = 'escalade_min';

@@ -1,5 +1,5 @@
 -- Imitation minimale de ce que Supabase fournit (auth, storage), pour tester les migrations sur un Postgres nu.
-create schema auth; create role authenticated;
+create schema auth; create role authenticated; create role anon;
 create table auth.claims (jwt jsonb);
 insert into auth.claims values ('{"app_metadata":{"role":"siege"}}');
 create function auth.uid() returns uuid language sql as $$ select null::uuid $$;

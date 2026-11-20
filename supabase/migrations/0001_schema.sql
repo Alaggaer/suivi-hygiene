@@ -204,12 +204,12 @@ create table journal (
   at timestamptz not null default now()
 );
 
-create function interdire_suppression() returns trigger language plpgsql as $$
+create function interdire_suppression() returns trigger language plpgsql set search_path = public as $$
 begin
   raise exception 'Suppression interdite sur % : corriger plutôt que supprimer', tg_table_name;
 end $$;
 
-create function historiser() returns trigger language plpgsql security definer as $$
+create function historiser() returns trigger language plpgsql security definer set search_path = public as $$
 begin
   insert into journal (tbl, ref_id, avant, apres) values (tg_table_name, old.id, to_jsonb(old), to_jsonb(new));
   return new;
@@ -227,10 +227,10 @@ end $$;
 -- ---------------------------------------------------------------- sécurité (RLS)
 -- Le site et le rôle du compte connecté sont posés dans app_metadata par le siège :
 --   tablette : {"site_id": "<uuid>", "role": "tablette"} ; siège : {"role": "siege"}
-create function mon_site() returns uuid language sql stable as $$
+create function mon_site() returns uuid language sql stable set search_path = public as $$
   select nullif(auth.jwt() -> 'app_metadata' ->> 'site_id', '')::uuid
 $$;
-create function est_siege() returns boolean language sql stable as $$
+create function est_siege() returns boolean language sql stable set search_path = public as $$
   select coalesce(auth.jwt() -> 'app_metadata' ->> 'role', '') = 'siege'
 $$;
 
@@ -262,14 +262,14 @@ alter table profils enable row level security;
 create policy gerer on profils for all using (est_siege()) with check (est_siege());
 
 create function profils_du_site() returns table (id uuid, nom text, role role_utilisateur)
-language sql stable security definer set search_path = public as $$
+language sql stable security definer set search_path = public, extensions as $$
   select p.id, p.nom, p.role from profils p
   where p.actif and (p.site_id = mon_site() or (est_siege() and p.site_id is null))
   order by p.nom
 $$;
 
 create function verifier_pin(p_profil uuid, p_pin text) returns boolean
-language sql stable security definer set search_path = public as $$
+language sql stable security definer set search_path = public, extensions as $$
   select exists (
     select 1 from profils p
     where p.id = p_profil and p.actif
@@ -281,7 +281,7 @@ $$;
 -- ---------------------------------------------------------------- génération des tâches du jour
 -- Appelée chaque nuit (pg_cron) et à l'ouverture de l'app.
 create function generer_taches(p_jour date default (now() at time zone 'Europe/Paris')::date)
-returns int language plpgsql security definer set search_path = public as $$
+returns int language plpgsql security definer set search_path = public, extensions as $$
 declare n int;
 begin
   insert into taches (site_id, modele_id, type, titre, jour, echeance)

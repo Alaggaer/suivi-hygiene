@@ -19,7 +19,7 @@ begin
 end $$;
 
 -- 2. À l'insertion d'une saisie : la personne doit appartenir au site, et les valeurs de référence viennent du serveur.
-create function controler_saisie() returns trigger language plpgsql security definer set search_path = public as $$
+create function controler_saisie() returns trigger language plpgsql security definer set search_path = public, extensions as $$
 declare v_par uuid;
 begin
   v_par := (to_jsonb(new) ->> case tg_table_name when 'anomalies' then 'cree_par' else 'par' end)::uuid;
@@ -61,7 +61,7 @@ alter table pin_essais enable row level security;   -- aucune politique : lisibl
 
 drop function verifier_pin(uuid, text);
 create function verifier_pin(p_profil uuid, p_pin text) returns boolean
-language plpgsql volatile security definer set search_path = public as $$
+language plpgsql volatile security definer set search_path = public, extensions as $$
 declare ok boolean; e pin_essais;
 begin
   if not exists (select 1 from profils p where p.id = p_profil and p.actif and (p.site_id = mon_site() or est_siege())) then
@@ -83,3 +83,7 @@ begin
   end if;
   return ok;
 end $$;
+
+-- 4. Le journal des modifications contient les lignes de tous les sites : lisible par le siège seulement.
+alter table journal enable row level security;
+create policy lire on journal for select using (est_siege());
