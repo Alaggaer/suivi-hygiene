@@ -16,7 +16,7 @@ Ne jamais mettre la clé `service_role` dans l'app.
 - [x] Schéma de base testé (contrôles, interdiction de suppression, journal, PIN)
 - [x] Semaine 1 : activation tablette, connexion PIN, tâches du jour avec retards, relevés de températures, huile
 - [x] Semaine 2 : file d'envoi hors ligne (IndexedDB, rejouable sans doublon), lectures et PIN hors ligne, livraisons, produit utilisé, photos compressées, minuteur de rangement
-- [ ] Semaine 3 : minuteurs, anomalies (traitement), escalades et notifications
+- [x] Semaine 3 : minuteurs refroidissement / remise en T°, cycle des anomalies (droits par rôle), Signaler, tâches simples, relances côté serveur (file de notifications ; envoi push à brancher)
 - [ ] Semaine 4 : tableau de bord siège, paramétrage, pilote 2 sites
 
 ## Tests

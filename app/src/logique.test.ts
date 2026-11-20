@@ -70,3 +70,26 @@ describe("heure de Paris", () => {
     expect(cheminPhoto("site-1", "abc", Date.parse("2026-11-20T23:30:00Z"))).toBe("site-1/2026-11-21/abc.webp");
   });
 });
+
+import { minuteurConforme, transitionPermise } from "./logique";
+describe("minuteurs de cuisine", () => {
+  it("refroidissement : sous +10 °C en 2 h au plus", () => {
+    expect(minuteurConforme("refroidissement", 8, 110 * MIN)).toBe(true);
+    expect(minuteurConforme("refroidissement", 10, 110 * MIN)).toBe(false);
+    expect(minuteurConforme("refroidissement", 5, 121 * MIN)).toBe(false);
+  });
+  it("remise en température : +63 °C en 1 h au plus", () => {
+    expect(minuteurConforme("remise_temperature", 63, 55 * MIN)).toBe(true);
+    expect(minuteurConforme("remise_temperature", 60, 55 * MIN)).toBe(false);
+    expect(minuteurConforme("remise_temperature", 70, 61 * MIN)).toBe(false);
+  });
+});
+describe("cycle des anomalies", () => {
+  it("tout le monde peut traiter, seuls chef / responsable / siège vérifient", () => {
+    expect(transitionPermise("ouverte", "traitee", "equipe")).toBe(true);
+    expect(transitionPermise("traitee", "verifiee", "equipe")).toBe(false);
+    expect(transitionPermise("traitee", "verifiee", "chef")).toBe(true);
+    expect(transitionPermise("ouverte", "verifiee", "siege")).toBe(false);
+    expect(transitionPermise("verifiee", "ouverte", "siege")).toBe(false);
+  });
+});

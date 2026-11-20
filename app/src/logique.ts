@@ -56,3 +56,22 @@ export function cheminPhoto(siteId: string, id: string, maintenant: number): str
   const jour = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Paris" }).format(maintenant);
   return `${siteId}/${jour}/${id}.webp`;
 }
+
+/** Refroidissement rapide : passer sous +10 °C en 2 h au plus. Remise en température : atteindre +63 °C en 1 h au plus. */
+export const REGLES_MINUTEUR = {
+  refroidissement: { duree: 120 * MIN, alerte: 105 * MIN, cible: 10 },
+  remise_temperature: { duree: 60 * MIN, alerte: 50 * MIN, cible: 63 },
+} as const;
+export function minuteurConforme(type: keyof typeof REGLES_MINUTEUR, tFin: number, dureeMs: number): boolean {
+  const r = REGLES_MINUTEUR[type];
+  if (dureeMs > r.duree) return false;
+  return type === "refroidissement" ? tFin < r.cible : tFin >= r.cible;
+}
+
+/** Cycle d'une anomalie : ouverte → traitée (par tous) → vérifiée (chef, responsable ou siège). */
+export type StatutAnomalie = "ouverte" | "traitee" | "verifiee";
+export function transitionPermise(de: StatutAnomalie, vers: StatutAnomalie, role: "equipe" | "chef" | "responsable" | "siege"): boolean {
+  if (de === "ouverte" && vers === "traitee") return true;
+  if (de === "traitee" && vers === "verifiee") return role !== "equipe";
+  return false;
+}

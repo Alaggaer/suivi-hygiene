@@ -109,6 +109,17 @@ export function supabaseApi(url: string, cleAnon: string): Api {
         case "livraison_rangee":
           verifier(await sb.rpc("marquer_rangee", { p_livraison: op.livraison_id, p_at_client: op.at_client }));
           break;
+        case "minuteur":
+          await inserer("minuteurs", [{
+            id: op.id, site_id, par: op.par, type: op.type_minuteur, plat: op.plat, t_debut: op.t_debut, debut_at: op.debut_at,
+            t_fin: op.t_fin, fin_at: op.fin_at, conforme: op.conforme, action: op.action ?? null,
+          }]);
+          break;
+        case "anomalie_statut":
+          verifier(await sb.rpc("changer_statut_anomalie", {
+            p_anomalie: op.anomalie_id, p_statut: op.statut, p_profil: op.par, p_commentaire: op.commentaire ?? null, p_at_client: op.at_client,
+          }));
+          break;
         case "utilisation":
           await inserer("utilisations", [{ id: op.id, ...commun, photo: op.photo, famille: op.famille, service: op.service }]);
           break;

@@ -4,30 +4,37 @@ import type { FileEnvoi } from "./hors-ligne/file";
 import type { Entree } from "./hors-ligne/stockage";
 import { ContexteProvider, nouvelId, useEnregistrer, useFile } from "./contexte";
 import { etatMinuteur, useMinuteurs, type Minuteur } from "./minuteurs";
-import { Accueil, ListeAnomalies } from "./screens/Accueil";
+import { Accueil } from "./screens/Accueil";
+import { Anomalies, FeuilleNonConforme, LancerMinuteur, Signaler, TacheSimple } from "./screens/Semaine3";
 import { Activation, Connexion } from "./screens/Connexion";
 import { Releves } from "./screens/Releves";
 import { Huile } from "./screens/Huile";
 import { Livraison } from "./screens/Livraison";
 import { Produit } from "./screens/Produit";
-import { duree, hm, MIN, useInactivite, useMaintenant, useToast } from "./ui/outils";
+import { duree, hm, MIN, PaveNumerique, temp, useInactivite, useMaintenant, useToast } from "./ui/outils";
+import { minuteurConforme } from "./logique";
 
 type Ecran =
   | { nom: "accueil" } | { nom: "releves"; tache?: Tache } | { nom: "huile"; tache?: Tache }
-  | { nom: "anomalies" } | { nom: "livraison" } | { nom: "produit" };
+  | { nom: "anomalies" } | { nom: "livraison" } | { nom: "produit" } | { nom: "minuteur" }
+  | { nom: "signaler"; categorie?: string } | { nom: "tache"; tache: Tache };
 
 /** Les saisies pas encore envoyées s'affichent tout de suite : tâche cochée, anomalie listée. */
 export function appliquerEnAttente(taches: Tache[], anomalies: Anomalie[], entrees: Entree[]) {
   const faites = new Map<string, { at: string; nom: string }>();
   const nouvelles: Anomalie[] = [];
+  const statuts = new Map<string, Anomalie["statut"]>();
   for (const { op } of entrees) {
+    if (op.type === "anomalie_statut") statuts.set(op.anomalie_id, op.statut);
     if ((op.type === "terminer_tache" || op.type === "releves" || op.type === "huile") && op.tache_id) faites.set(op.tache_id, { at: op.at_client, nom: op.par_nom });
     if (op.type === "anomalies") op.lignes.forEach((l) => nouvelles.push({ id: l.id, titre: l.titre, categorie: l.categorie, gravite: l.gravite, statut: "ouverte", cree_at: op.at_client, enAttente: true }));
   }
   const ids = new Set(anomalies.map((a) => a.id));
   return {
     taches: taches.map((t) => (!t.faite_at && faites.has(t.id) ? { ...t, faite_at: faites.get(t.id)!.at, faite_par_nom: faites.get(t.id)!.nom } : t)),
-    anomalies: [...nouvelles.filter((a) => !ids.has(a.id)).reverse(), ...anomalies],
+    anomalies: [...nouvelles.filter((a) => !ids.has(a.id)).reverse(), ...anomalies]
+      .map((a) => (statuts.has(a.id) ? { ...a, statut: statuts.get(a.id)!, enAttente: true } : a))
+      .filter((a) => a.statut !== "verifiee"),
   };
 }
 
@@ -80,7 +87,7 @@ export default function App({ api, file }: { api: Api; file: FileEnvoi }) {
   const ouvrirTache = (t: Tache) => {
     if (t.type === "releves") setEcran({ nom: "releves", tache: t });
     else if (t.type === "huile") setEcran({ nom: "huile", tache: t });
-    else toast("Ce type de tâche arrive dans une prochaine version.");
+    else setEcran({ nom: "tache", tache: t });
   };
 
   let corps;
@@ -92,7 +99,10 @@ export default function App({ api, file }: { api: Api; file: FileEnvoi }) {
   else if (ecran.nom === "huile") corps = <Huile tache={ecran.tache} onFini={retour} />;
   else if (ecran.nom === "livraison") corps = <Livraison onFini={retour} lancerMinuteur={minuteurs.ajouter} />;
   else if (ecran.nom === "produit") corps = <Produit onFini={retour} />;
-  else if (ecran.nom === "anomalies") corps = <ListeAnomalies anomalies={anomalies} onRetour={retour} />;
+  else if (ecran.nom === "anomalies") corps = <Anomalies anomalies={anomalies} onRetour={retour} />;
+  else if (ecran.nom === "minuteur") corps = <LancerMinuteur onFini={retour} lancer={minuteurs.ajouter} />;
+  else if (ecran.nom === "signaler") corps = <Signaler onFini={retour} categorie={ecran.categorie} />;
+  else if (ecran.nom === "tache") corps = <TacheSimple tache={ecran.tache} onFini={retour} onProbleme={() => setEcran({ nom: "signaler", categorie: "Propreté" })} />;
   else corps = <Accueil taches={taches} anomalies={anomalies} onTache={ouvrirTache} onAller={(n) => setEcran({ nom: n })} />;
 
   const contenu = (
@@ -124,6 +134,22 @@ function Bandeau({ minuteurs, retirer }: { minuteurs: Minuteur[]; retirer: (id: 
   const enregistrer = useEnregistrer();
   const toast = useToast();
   const prevenus = useRef(new Set<string>());
+  const [saisie, setSaisie] = useState<Minuteur | null>(null);
+  const [nc, setNc] = useState<{ m: Minuteur; tFin: number; ecoule: number } | null>(null);
+
+  async function enregistrerMinuteur(m: Minuteur, tFin: number, ecoule: number, conforme: boolean, action?: string) {
+    const id = nouvelId();
+    const plat = String(m.donnees?.plat ?? ""), tDebut = Number(m.donnees?.t_debut ?? 0);
+    const type = m.type as "refroidissement" | "remise_temperature";
+    await enregistrer({ type: "minuteur", id, type_minuteur: type, plat, t_debut: tDebut,
+      debut_at: new Date(m.debut).toISOString(), t_fin: tFin, fin_at: new Date().toISOString(), conforme, action });
+    if (!conforme) await enregistrer({ type: "anomalies", lignes: [{
+      id: nouvelId(), source: "minuteur", ref_id: id, categorie: "Process", gravite: "critique",
+      titre: `${type === "refroidissement" ? "Refroidissement raté" : "Remise en T° ratée"} · ${plat} (${temp(tFin)} après ${duree(ecoule)}) · ${action}`,
+    }] });
+    retirer(m.id);
+    toast(conforme ? `Conforme · ${temp(tFin)} en ${duree(ecoule)}` : "Non conforme : anomalie critique envoyée au siège");
+  }
 
   useEffect(() => {
     for (const m of minuteurs) {
@@ -137,7 +163,8 @@ function Bandeau({ minuteurs, retirer }: { minuteurs: Minuteur[]; retirer: (id: 
   }, [maintenant, minuteurs, toast]);
 
   async function terminer(m: Minuteur) {
-    if (m.type === "rangement" && m.ref) {
+    if (m.type !== "rangement") { setSaisie(m); return; }
+    if (m.ref) {
       const ecoule = Date.now() - m.debut;
       await enregistrer({ type: "livraison_rangee", livraison_id: m.ref });
       if (ecoule > m.duree) await enregistrer({ type: "anomalies", lignes: [{
@@ -152,6 +179,16 @@ function Bandeau({ minuteurs, retirer }: { minuteurs: Minuteur[]; retirer: (id: 
   if (!minuteurs.length) return null;
   return (
     <div className="timers">
+      {saisie && <PaveNumerique titre={`Température à cœur · ${String(saisie.donnees?.plat ?? "")}`} unite="°C" signe={false}
+        onFermer={() => setSaisie(null)}
+        onValider={(v) => {
+          const m = saisie, ecoule = Date.now() - m.debut;
+          setSaisie(null);
+          if (minuteurConforme(m.type as "refroidissement" | "remise_temperature", v, ecoule)) void enregistrerMinuteur(m, v, ecoule, true);
+          else setNc({ m, tFin: v, ecoule });
+        }} />}
+      {nc && <FeuilleNonConforme m={nc.m} tFin={nc.tFin} ecoule={nc.ecoule} onFermer={() => setNc(null)}
+        onChoix={(a) => { const x = nc; setNc(null); void enregistrerMinuteur(x.m, x.tFin, x.ecoule, false, a); }} />}
       {minuteurs.map((m) => {
         const e = etatMinuteur(m, maintenant), ecoule = maintenant - m.debut, reste = m.duree - ecoule;
         return (
@@ -159,7 +196,7 @@ function Bandeau({ minuteurs, retirer }: { minuteurs: Minuteur[]; retirer: (id: 
             <b>{m.libelle}</b>
             <span className="rest num">{reste < 0 ? `Dépassé de ${duree(reste)}` : `Reste ${duree(reste)}`}</span>
             <span className="bar"><i style={{ width: `${Math.min(100, (ecoule / m.duree) * 100)}%` }} /></span>
-            <span className="hint" style={{ fontSize: 14 }}>{m.type === "rangement" ? "Touchez quand c'est rangé" : ""}</span>
+            <span className="hint" style={{ fontSize: 14 }}>{m.type === "rangement" ? "Touchez quand c'est rangé" : e === "encours" ? `Objectif : ${m.type === "refroidissement" ? "sous +10 °C" : "+63 °C ou plus"}` : "Prendre la température"}</span>
           </button>
         );
       })}

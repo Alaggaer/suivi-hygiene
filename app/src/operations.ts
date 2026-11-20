@@ -22,7 +22,12 @@ export type Operation =
       viande: boolean; origine_ok?: boolean; conforme: boolean; motifs?: string[]; action?: string; photo_nc?: string;
     })
   | (Base & { type: "livraison_rangee"; livraison_id: string })
-  | (Base & { type: "utilisation"; id: string; photo: string; famille: string; service: "midi" | "soir" });
+  | (Base & { type: "utilisation"; id: string; photo: string; famille: string; service: "midi" | "soir" })
+  | (Base & {
+      type: "minuteur"; id: string; type_minuteur: "refroidissement" | "remise_temperature"; plat: string;
+      t_debut: number; debut_at: string; t_fin: number; fin_at: string; conforme: boolean; action?: string;
+    })
+  | (Base & { type: "anomalie_statut"; anomalie_id: string; statut: "traitee" | "verifiee"; commentaire?: string });
 
 export type TypeOperation = Operation["type"];
 

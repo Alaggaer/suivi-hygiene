@@ -63,6 +63,40 @@ do $$ begin
   assert (select range_at from livraisons) < now() - interval '4 minutes', 'rangement : première heure gardée';
 end $$;
 
+
+-- anomalies : cycle et droits
+insert into profils(id,site_id,nom,role,pin_hash) values ('00000000-0000-0000-0000-0000000000a3','00000000-0000-0000-0000-000000000001','Julie','equipe',crypt('1111',gen_salt('bf')));
+insert into anomalies(id,site_id,source,categorie,gravite,titre) values ('00000000-0000-0000-0000-0000000000c1','00000000-0000-0000-0000-000000000001','manuel','Matériel','mineure','Joint abîmé');
+do $$ begin
+  perform changer_statut_anomalie('00000000-0000-0000-0000-0000000000c1','traitee','00000000-0000-0000-0000-0000000000a3','Joint changé');
+  perform changer_statut_anomalie('00000000-0000-0000-0000-0000000000c1','traitee','00000000-0000-0000-0000-0000000000a3','Joint changé');  -- rejoué
+  assert (select statut from anomalies where id='00000000-0000-0000-0000-0000000000c1') = 'traitee', 'traitée par l''équipe';
+  begin
+    perform changer_statut_anomalie('00000000-0000-0000-0000-0000000000c1','verifiee','00000000-0000-0000-0000-0000000000a3');
+    raise exception 'ÉCHEC : un équipier a pu vérifier';
+  exception when insufficient_privilege then null; end;
+  perform changer_statut_anomalie('00000000-0000-0000-0000-0000000000c1','verifiee','00000000-0000-0000-0000-0000000000a1');
+  assert (select statut from anomalies where id='00000000-0000-0000-0000-0000000000c1') = 'verifiee', 'vérifiée par le chef';
+end $$;
+
+-- relances : une seule fois par seuil, et anomalie pour une tâche non faite la veille
+insert into taches(site_id,type,titre,jour,echeance) values
+  ('00000000-0000-0000-0000-000000000001','releves','Relevé soir (retard 40 min)',current_date, now() - interval '40 minutes'),
+  ('00000000-0000-0000-0000-000000000001','releves','Relevé hier',current_date - 1, now() - interval '20 hours');
+insert into anomalies(site_id,source,categorie,gravite,titre) values ('00000000-0000-0000-0000-000000000001','manuel','Nuisibles','critique','Souris en réserve');
+insert into anomalies(site_id,source,categorie,gravite,titre,cree_at) values ('00000000-0000-0000-0000-000000000001','manuel','Propreté','majeure','Hotte sale', now() - interval '25 hours');
+do $$ declare premier int; begin
+  premier := escalader();
+  assert premier > 0, 'des relances sont créées';
+  assert escalader() = 0, 'relancer une 2e fois ne crée rien';
+  assert (select count(*) from notifications where destinataire='chef' and titre like '%Relevé soir%') = 1, 'chef prévenu à +30 min';
+  assert (select count(*) from notifications where destinataire='responsable' and titre like '%Relevé soir%') = 0, 'pas encore le responsable';
+  assert (select count(*) from notifications where destinataire='responsable' and titre like '%Relevé hier%') = 1, 'responsable prévenu à +2 h';
+  assert (select count(*) from anomalies where source='tache' and titre like '%Relevé hier%') = 1, 'tâche non faite hier → anomalie';
+  assert (select count(*) from notifications where destinataire='siege' and titre like 'Critique%') = 1, 'critique → siège';
+  assert (select count(*) from notifications where destinataire='siege' and titre like 'Non traitée : Hotte%') = 1, 'majeure > 24 h → siège';
+end $$;
+
 -- règles d'accès : une tablette ne voit que son site
 create role tablette; grant usage on schema public, auth to tablette; grant select, insert, update on all tables in schema public to tablette;
 grant select on auth.claims to tablette; grant execute on all functions in schema public, auth to tablette;

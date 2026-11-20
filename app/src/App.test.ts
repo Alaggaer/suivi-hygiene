@@ -22,4 +22,15 @@ describe("saisies en attente affichées tout de suite", () => {
     expect(r.anomalies).toHaveLength(1);
     expect(r.anomalies[0].enAttente).toBeUndefined();
   });
+  it("applique tout de suite un changement de statut, et retire une anomalie vérifiée", () => {
+    const a = { id: "a1", titre: "x", categorie: "x", gravite: "mineure" as const, statut: "ouverte" as const, cree_at: base.at_client };
+    const b = { ...a, id: "a2", statut: "traitee" as const };
+    const entrees: Entree[] = [
+      { cle: 1, statut: "attente", tentatives: 0, photos: [], op: { ...base, type: "anomalie_statut", anomalie_id: "a1", statut: "traitee" } },
+      { cle: 2, statut: "attente", tentatives: 0, photos: [], op: { ...base, type: "anomalie_statut", anomalie_id: "a2", statut: "verifiee" } },
+    ];
+    const r = appliquerEnAttente([], [a, b], entrees);
+    expect(r.anomalies).toHaveLength(1);
+    expect(r.anomalies[0]).toMatchObject({ id: "a1", statut: "traitee", enAttente: true });
+  });
 });

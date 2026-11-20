@@ -1,5 +1,6 @@
 import type { Api, Anomalie, Profil, Tache } from "../types";
-import type { Operation } from "../operations";
+import { ErreurDefinitive, type Operation } from "../operations";
+import { transitionPermise } from "../logique";
 
 /** Serveur simulé en mémoire : sert au développement et aux démonstrations, rien n'est conservé. */
 const MIN = 60_000;
@@ -77,6 +78,16 @@ export const demoApi: Api = {
       case "livraison": if (nouveau(op.id)) recuDemo.livraisons++; break;
       case "utilisation": if (nouveau(op.id)) recuDemo.utilisations++; break;
       case "livraison_rangee": break;
+      case "minuteur": nouveau(op.id); break;
+      case "anomalie_statut": {
+        const a = anomalies.find((x) => x.id === op.anomalie_id);
+        const role = profils.find((p) => p.id === op.par)?.role ?? "equipe";
+        if (!a) break;
+        if (a.statut === op.statut) break;                       // déjà fait (envoi rejoué)
+        if (!transitionPermise(a.statut, op.statut, role)) throw new ErreurDefinitive("Changement de statut non autorisé");
+        a.statut = op.statut;
+        break;
+      }
     }
   },
 };
