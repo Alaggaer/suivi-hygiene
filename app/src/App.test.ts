@@ -33,4 +33,8 @@ describe("saisies en attente affichées tout de suite", () => {
     expect(r.anomalies).toHaveLength(1);
     expect(r.anomalies[0]).toMatchObject({ id: "a1", statut: "traitee", enAttente: true });
   });
+  it("une saisie refusée par le serveur n'apparaît pas comme enregistrée", () => {
+    const entrees: Entree[] = [{ cle: 1, statut: "bloquee", tentatives: 1, photos: [], op: { ...base, type: "terminer_tache", tache_id: "t1" } }];
+    expect(appliquerEnAttente([tache], [], entrees).taches[0].faite_at).toBeNull();
+  });
 });

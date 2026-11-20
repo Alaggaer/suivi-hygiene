@@ -4,7 +4,7 @@ insert into sites(id,nom,ville) values ('00000000-0000-0000-0000-000000000001','
 insert into profils(id,site_id,nom,role,pin_hash) values
   ('00000000-0000-0000-0000-0000000000a1','00000000-0000-0000-0000-000000000001','Karim','chef',crypt('1234',gen_salt('bf'))),
   ('00000000-0000-0000-0000-0000000000a2','00000000-0000-0000-0000-000000000002','Lea','chef',crypt('5555',gen_salt('bf')));
-insert into enceintes(id,site_id,nom,t_max) values ('00000000-0000-0000-0000-0000000000e1','00000000-0000-0000-0000-000000000001','CF positive',3);
+insert into enceintes(id,site_id,nom,t_max) values ('00000000-0000-0000-0000-0000000000e1','00000000-0000-0000-0000-000000000001','CF positive',3),('00000000-0000-0000-0000-0000000000e2','00000000-0000-0000-0000-000000000002','CF positive',3);
 insert into fournisseurs(id,nom) values ('00000000-0000-0000-0000-0000000000f1','Pomona');
 insert into taches_modeles(site_id,type,titre,heure_limite) values
   ('00000000-0000-0000-0000-000000000001','releves','Relevé matin','11:00'),
@@ -123,6 +123,42 @@ do $$ begin
     insert into releves(site_id,enceinte_id,valeur,t_max,par) values ('00000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-0000000000e1',2,3,'00000000-0000-0000-0000-0000000000a2');
     raise exception 'ÉCHEC : écriture pour un autre site acceptée';
   exception when insufficient_privilege then null; end;
+
+  -- durcissement : la tablette ne modifie pas une saisie existante, ne crée pas d'enceinte
+  insert into releves(site_id,enceinte_id,valeur,t_max,par) values ('00000000-0000-0000-0000-000000000002','00000000-0000-0000-0000-0000000000e2',2,3,'00000000-0000-0000-0000-0000000000a2');
+  update releves set valeur = -5;
+  assert (select valeur from releves) = 2, 'une tablette ne modifie pas un relevé envoyé';
+  begin
+    insert into enceintes(site_id,nom,t_max) values ('00000000-0000-0000-0000-000000000002','Frigo pirate',50);
+    raise exception 'ÉCHEC : une tablette crée une enceinte';
+  exception when insufficient_privilege then null; end;
+  -- seuil imposé par le serveur : la tablette envoie t_max = 99 pour faire passer +8 °C
+  begin
+    insert into releves(site_id,enceinte_id,valeur,t_max,par) values ('00000000-0000-0000-0000-000000000002','00000000-0000-0000-0000-0000000000e2',8,99,'00000000-0000-0000-0000-0000000000a2');
+    raise exception 'ÉCHEC : seuil envoyé par la tablette accepté';
+  exception when check_violation then null; end;
+  -- personne d'un autre site
+  begin
+    insert into releves(site_id,enceinte_id,valeur,t_max,par) values ('00000000-0000-0000-0000-000000000002','00000000-0000-0000-0000-0000000000e2',2,3,'00000000-0000-0000-0000-0000000000a1');
+    raise exception 'ÉCHEC : relevé signé par une personne d''un autre site';
+  exception when insufficient_privilege then null; end;
+  -- anomalie créée « vérifiée » d'office : remise à « ouverte »
+  insert into anomalies(id,site_id,source,categorie,gravite,titre,statut,cree_par) values ('00000000-0000-0000-0000-0000000000c9','00000000-0000-0000-0000-000000000002','manuel','x','mineure','x','verifiee','00000000-0000-0000-0000-0000000000a2');
+end $$;
+reset role;
+do $$ begin
+  assert (select statut from anomalies where id = '00000000-0000-0000-0000-0000000000c9') = 'ouverte', 'anomalie toujours créée ouverte';
+end $$;
+set role tablette;
+do $$ declare i int; begin
+  -- PIN : bloqué après 5 erreurs
+  for i in 1..5 loop perform verifier_pin('00000000-0000-0000-0000-0000000000a2','0000'); end loop;
+  begin
+    perform verifier_pin('00000000-0000-0000-0000-0000000000a2','5555');
+    raise exception 'ÉCHEC : PIN non bloqué après 5 erreurs';
+  exception when raise_exception then
+    if sqlerrm like 'ÉCHEC%' then raise; end if;
+  end;
   begin
     perform * from tableau_siege(7);
     raise exception 'ÉCHEC : une tablette lit le tableau du siège';

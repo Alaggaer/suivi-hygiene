@@ -25,7 +25,8 @@ export function appliquerEnAttente(taches: Tache[], anomalies: Anomalie[], entre
   const faites = new Map<string, { at: string; nom: string }>();
   const nouvelles: Anomalie[] = [];
   const statuts = new Map<string, Anomalie["statut"]>();
-  for (const { op } of entrees) {
+  // Seulement ce qui attend d'être envoyé : une saisie refusée par le serveur ne doit pas paraître enregistrée.
+  for (const { op } of entrees.filter((e) => e.statut === "attente")) {
     if (op.type === "anomalie_statut") statuts.set(op.anomalie_id, op.statut);
     if ((op.type === "terminer_tache" || op.type === "releves" || op.type === "huile") && op.tache_id) faites.set(op.tache_id, { at: op.at_client, nom: op.par_nom });
     if (op.type === "anomalies") op.lignes.forEach((l) => nouvelles.push({ id: l.id, titre: l.titre, categorie: l.categorie, gravite: l.gravite, statut: "ouverte", cree_at: op.at_client, enAttente: true }));
@@ -65,12 +66,12 @@ export default function App({ api, file }: { api: Api; file: FileEnvoi }) {
 
   // Envoi de la file : au démarrage, au retour du réseau, et toutes les 30 s.
   useEffect(() => {
-    const relancer = () => { setEnLigne(navigator.onLine); void file.vider(); };
+    const relancer = () => { setEnLigne(navigator.onLine); file.vider().catch(() => {}); };
     const horsLigne = () => setEnLigne(false);
     window.addEventListener("online", relancer);
     window.addEventListener("offline", horsLigne);
-    void file.vider();
-    const i = setInterval(() => void file.vider(), 30_000);
+    file.vider().catch(() => {});
+    const i = setInterval(() => { file.vider().catch(() => {}); }, 30_000);
     return () => { window.removeEventListener("online", relancer); window.removeEventListener("offline", horsLigne); clearInterval(i); };
   }, [file]);
 

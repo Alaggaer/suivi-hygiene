@@ -40,9 +40,13 @@ export function Connexion({ api, onConnecte }: { api: Api; onConnecte: (p: Profi
     const p = pin + k;
     setPin(p);
     if (p.length === 4) {
-      const ok = await api.verifierPin(choix.id, p).catch(() => false);
-      if (ok) onConnecte(choix);
-      else { setErreur("Code incorrect, réessayez."); setPin(""); }
+      try {
+        if (await api.verifierPin(choix.id, p)) { onConnecte(choix); return; }
+        setErreur("Code incorrect, réessayez.");
+      } catch (e) {
+        setErreur((e as Error).message || "Vérification impossible, réessayez.");
+      }
+      setPin("");
     }
   }
 

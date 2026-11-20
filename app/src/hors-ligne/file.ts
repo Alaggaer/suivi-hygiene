@@ -38,7 +38,7 @@ export class FileEnvoi {
   async ajouter(op: Operation, photos: PhotoEnAttente[] = []): Promise<void> {
     await this.stockage.ajouter(op, photos);
     await this.publier();
-    void this.vider();
+    this.vider().catch(() => { /* nouvel essai au prochain passage */ });
   }
 
   /** Envoie tout ce qui peut l'être. Un seul envoi à la fois : un appel pendant un envoi attend sa fin puis relance. */
@@ -80,6 +80,6 @@ export class FileEnvoi {
   /** Remet une opération bloquée dans la file (après correction côté serveur, par ex.). */
   async relancer(cle: number) {
     const e = (await this.stockage.lister()).find((x) => x.cle === cle);
-    if (e) { await this.stockage.maj({ ...e, statut: "attente", erreur: undefined }); await this.publier(); void this.vider(); }
+    if (e) { await this.stockage.maj({ ...e, statut: "attente", erreur: undefined }); await this.publier(); this.vider().catch(() => {}); }
   }
 }
