@@ -1,5 +1,5 @@
 def test_tableau_du_siege(page):
-    page.goto("http://localhost:4173/?demo&siege")
+    page.goto("http://localhost:4173/#siege")
     page.wait_for_selector("text=Tableau de bord du groupe")
     lignes = page.locator(".tbl tbody tr.clic")
     assert lignes.count() == 15, "un rang par restaurant"

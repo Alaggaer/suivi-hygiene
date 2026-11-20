@@ -56,7 +56,7 @@ export const demoApi: Api = {
   friteuses: () => attendre([{ id: "f1", nom: "Friteuse 1", litres: 25 }, { id: "f2", nom: "Friteuse 2", litres: 25 }]),
   seuilsHuile: () => attendre({ orange: 20, rouge: 25 }),
   fournisseurs: () => attendre(["Transgourmet", "Pomona", "Metro", "Brake", "Boucherie (viandes)", "Boulangerie"].map((nom, i) => ({ id: `f${i}`, nom }))),
-  estSiege: async () => typeof location !== "undefined" && new URLSearchParams(location.search).has("siege"),
+  estSiege: async () => typeof location !== "undefined" && (location.hash === "#siege" || new URLSearchParams(location.search).has("siege")),
   tableauSiege: async (jours) => SITES_DEMO.map((s, i) => {
     // Chiffres d'exemple déterministes (mêmes à chaque chargement), proportionnels à la période.
     const r = (k: number) => ((i * 37 + k * 11) % 17) / 17;

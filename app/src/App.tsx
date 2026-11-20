@@ -126,8 +126,8 @@ export default function App({ api, file }: { api: Api; file: FileEnvoi }) {
       {api.mode === "demo" && (
         <div className="demo">
           {siege
-            ? <>Vue siège · chiffres d'exemple. <a href="?demo">Revenir à la tablette</a></>
-            : <>Mode démonstration : serveur simulé, rien n'est conservé. PIN : Karim 1234, Julie 1111, Mehdi 2222, Thomas 3333. <a href="?demo&siege">Voir le tableau du siège</a></>}
+            ? <>Vue siège · chiffres d'exemple. <a href="#tablette" onClick={() => { location.hash = "tablette"; location.reload(); }}>Revenir à la tablette</a></>
+            : <>Mode démonstration : serveur simulé, rien n'est conservé. PIN : Karim 1234, Julie 1111, Mehdi 2222, Thomas 3333. <a href="#siege" onClick={() => { location.hash = "siege"; location.reload(); }}>Voir le tableau du siège</a></>}
         </div>
       )}
       {erreur && profil && <div className="demo" style={{ background: "var(--bad-bg)", color: "var(--bad)" }}>{erreur}</div>}
