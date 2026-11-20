@@ -1,42 +1,57 @@
-def test_tableau_du_siege(page):
+def ouvrir(page):
+    # Heure fixe (15:40 à Paris) : la règle « tablette silencieuse » ne joue qu'en heures d'ouverture.
+    page.clock.set_fixed_time("2026-11-20T15:40:00+01:00")
     page.goto("http://localhost:4173/#siege")
-    page.wait_for_selector("text=Tableau de bord du groupe")
-    lignes = page.locator(".tbl tbody tr.clic")
-    assert lignes.count() == 15, "un rang par restaurant"
-    page.click("button.opt:text-is('30 jours')")
-    page.wait_for_selector(".tbl tbody tr.clic")
-    lignes.first.click()
-    page.wait_for_selector("tr.detail >> text=Tâches échues sur la période")
-    assert page.locator("text=Boucherie (viandes)").count() == 1
+    page.wait_for_selector(".s3-carte")
 
-def test_siege_traite_et_verifie_une_anomalie(page):
-    page.goto("http://localhost:4173/#siege")
-    page.wait_for_selector("text=Tableau de bord du groupe")
-    page.wait_for_selector("button[role=tab]:has-text('Anomalies') .compte:text-is('3')")
-    page.click("button[role=tab]:has-text('Anomalies')")
-    page.wait_for_selector("text=À traiter (2)")
-    assert "DALLAS" in page.locator(".carte").first.inner_text(), "la critique d'abord"
-    page.locator(".carte").first.locator("input").fill("Frigoriste passé, porte réparée")
-    page.locator(".carte").first.locator("text=Marquer traitée").click()
-    page.wait_for_selector("text=À traiter (1)")
-    page.click("text=À vérifier (2)")
-    carte = page.locator(".carte:has-text('DALLAS')")
-    assert "Frigoriste passé" in carte.inner_text()
-    carte.locator("text=Vérifier et clore").click()
-    page.wait_for_selector("text=Vérifiées · 7 jours (2)")
-    page.wait_for_selector("button[role=tab]:has-text('Anomalies') .compte:text-is('2')")
+def test_accueil_cartes_par_restaurant(page):
+    ouvrir(page)
+    cartes = page.locator(".s3-carte")
+    assert cartes.count() == 15, "une carte par restaurant"
+    premiere = cartes.first.inner_text()
+    assert "À surveiller" in premiere, "les plus préoccupants d'abord"
+    assert page.locator(".s3-carte:has-text('PHOENIX'):has-text('Tablette silencieuse')").count() == 1
+    assert "PHOENIX" in page.locator(".s3-chiffre:has-text('Tablettes silencieuses')").inner_text()
+    page.click(".s3-filtres button:has-text('À surveiller')")
+    n = page.locator(".s3-carte").count()
+    assert 1 <= n < 15 and page.locator(".s3-carte .pill.warn, .s3-carte .pill.ok").count() == 0
 
-def test_siege_preuves_du_jour(page):
-    page.goto("http://localhost:4173/#siege")
-    page.wait_for_selector(".tbl tbody tr.clic")
-    page.locator(".tbl tbody tr.clic").first.click()
-    page.click("text=Voir les preuves du jour de ce restaurant")
-    page.wait_for_selector("h3:text-is('Relevés de températures')")
-    for titre in ["Tâches du jour", "Huile", "Livraisons", "Traçabilité produits", "Anomalies signalées ce jour"]:
-        assert page.locator(f"h3:text-is('{titre}')").count() == 1, titre
-    assert page.locator("text=non faite").count() >= 1
-    assert page.locator("text=non utilisée").count() == 1
-    page.click("text=Bon de livraison >> nth=0")
+def test_fiche_restaurant_et_dossier(page):
+    ouvrir(page)
+    page.click(".s3-carte:has-text('DALLAS')")
+    page.wait_for_selector("h2:has-text('La journée')")
+    for titre in ["Températures", "Huile", "Livraisons", "Traçabilité produits", "30 derniers jours"]:
+        assert page.locator(f".s3-bloc h2:has-text('{titre}')").count() == 1, titre
+    assert page.locator(".s3-atraiter:has-text('Chambre froide négative')").count() == 1, "anomalie du restaurant à traiter en tête"
+    page.wait_for_selector(".s3-vignette img")
+    page.locator(".s3-vignette").first.click()
     page.wait_for_selector(".visionneuse img")
     page.click(".visionneuse")
-    assert page.locator(".visionneuse").count() == 0
+    page.click("button:has-text('Hier')")
+    page.wait_for_selector("h2:has-text('La journée')")
+    page.click("text=← Tous les restaurants")
+    page.wait_for_selector(".s3-carte")
+
+def test_traiter_puis_verifier(page):
+    ouvrir(page)
+    assert page.locator(".s3-averifier").inner_text() == "1 à vérifier"
+    page.click(".s3-carte:has-text('DALLAS')")
+    carte = page.locator(".s3-atraiter .carte")
+    carte.locator("input").fill("Frigoriste passé, porte réparée")
+    carte.locator("text=Marquer traitée").click()
+    page.wait_for_selector(".s3-averifier:text-is('2 à vérifier')")
+    page.click(".s3-averifier")
+    page.wait_for_selector("h1:has-text('Anomalies du groupe')")
+    c = page.locator(".carte:has-text('DALLAS')")
+    assert "Frigoriste passé" in c.inner_text()
+    c.locator("text=Vérifier et clore").click()
+    page.wait_for_selector(".s3-averifier:text-is('1 à vérifier')")
+
+def test_telephone(page):
+    page.set_viewport_size({"width": 390, "height": 844})
+    ouvrir(page)
+    largeur = page.evaluate("document.documentElement.scrollWidth")
+    assert largeur <= 392, f"pas de défilement horizontal sur téléphone ({largeur}px)"
+    page.click(".s3-carte >> nth=0")
+    page.wait_for_selector("h2:has-text('La journée')")
+    assert page.evaluate("document.documentElement.scrollWidth") <= 392

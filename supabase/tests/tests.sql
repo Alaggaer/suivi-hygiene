@@ -177,6 +177,18 @@ do $$ declare r record; t record; j jsonb; begin
 end $$;
 update auth.claims set jwt = '{"app_metadata":{"role":"siege"}}';
 
+-- siège v3 : état du jour par restaurant, historique 30 jours
+do $$ declare e record; n int; begin
+  select * into e from etat_restaurants() where nom = 'DALLAS';
+  assert e.taches_total >= 2 and e.enceintes = 1 and e.enceintes_relevees = 1, format('état du jour DALLAS : %s', row_to_json(e));
+  assert e.friteuses = 2 and e.friteuses_faites = 1, format('friteuses : %s/%s', e.friteuses_faites, e.friteuses);
+  assert e.derniere_saisie is not null and e.derniere_saisie_par is not null, 'dernière saisie connue';
+  assert e.anomalies_critiques >= 1, 'critique comptée';
+  select count(*) into n from historique_site('00000000-0000-0000-0000-000000000001', 30);
+  assert n = 30, format('30 jours d''historique, obtenu %s', n);
+  assert (select taches_echues from historique_site('00000000-0000-0000-0000-000000000001', 30) order by jour desc limit 1) >= 1, 'aujourd''hui compte ses tâches échues';
+end $$;
+
 -- règles d'accès : une tablette ne voit que son site
 create role tablette in role authenticated; grant usage on schema public, auth to tablette; grant select, insert, update on all tables in schema public to tablette;
 grant select on auth.claims to tablette; grant execute on all functions in schema auth to tablette;
@@ -243,6 +255,10 @@ do $$ declare i int; begin
   begin
     perform * from tableau_siege_v2(7);
     raise exception 'ÉCHEC : une tablette lit le tableau v2 du siège';
+  exception when insufficient_privilege then null; end;
+  begin
+    perform * from etat_restaurants();
+    raise exception 'ÉCHEC : une tablette lit l''état des restaurants';
   exception when insufficient_privilege then null; end;
   begin
     perform * from anomalies_siege();

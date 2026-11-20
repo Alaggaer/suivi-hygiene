@@ -1,4 +1,4 @@
-import type { Api, Anomalie, AnomalieSiege, EtatFriteuse, Preuves, Profil, Tache } from "../types";
+import type { Api, Anomalie, AnomalieSiege, EtatRestaurant, EtatFriteuse, Preuves, Profil, Tache } from "../types";
 import { ErreurDefinitive, type Operation } from "../operations";
 import { transitionPermise } from "../logique";
 
@@ -73,6 +73,37 @@ export const demoApi: Api = {
   etatFriteuses: () => attendre(etatHuile.map((e) => ({ ...e }))),
   fournisseurs: () => attendre(["Transgourmet", "Pomona", "Metro", "Brake", "Boucherie (viandes)", "Boulangerie"].map((nom, i) => ({ id: `f${i}`, nom }))),
   anomaliesSiege: () => attendre(anomaliesGroupe.map((a) => ({ ...a }))),
+  etatRestaurants: async () => {
+    // État du jour d'exemple, cohérent avec les anomalies du groupe ci-dessus.
+    const ilYa = (min: number) => iso(Date.now() - min * MIN);
+    const base = (i: number): EtatRestaurant => ({
+      site_id: `s${i}`, nom: SITES_DEMO[i][0], ville: SITES_DEMO[i][1],
+      taches_total: 9, taches_faites: 6, taches_en_retard: 0, taches_echues: 6,
+      enceintes: 6, enceintes_relevees: 6, releves_hors_seuil: 0,
+      friteuses: 4, friteuses_faites: 4, huile_rouges: 0, huile_trop_vieille: 0, huile_max: 16 + (i % 5),
+      livraisons: 1 + (i % 3), livraisons_nc: 0, livraisons_non_rangees: 0,
+      anomalies_ouvertes: 0, anomalies_a_verifier: 0, anomalies_critiques: 0,
+      derniere_saisie: ilYa(4 + ((i * 7) % 35)), derniere_saisie_par: ["Karim", "Léa", "Hugo", "Inès", "Paul", "Nadia"][i % 6],
+    });
+    const ajust: Record<number, Partial<EtatRestaurant>> = {
+      3: { taches_en_retard: 2, releves_hors_seuil: 1, anomalies_ouvertes: 1, anomalies_critiques: 1, derniere_saisie_par: "Karim" },
+      6: { enceintes_relevees: 0, taches_en_retard: 1, anomalies_ouvertes: 1 },
+      8: { taches_faites: 3, taches_echues: 6, taches_en_retard: 3, friteuses_faites: 0, huile_max: null, derniere_saisie: ilYa(190) },
+      1: { huile_trop_vieille: 1, anomalies_a_verifier: 1 },
+      0: { livraisons_nc: 1 },
+      5: { huile_rouges: 1, huile_max: 26, taches_en_retard: 1 },
+      2: { livraisons_non_rangees: 1 },
+    };
+    return attendre(SITES_DEMO.map((_, i) => ({ ...base(i), ...(ajust[i] ?? {}) })));
+  },
+  historiqueSite: async (_site, jours) => {
+    const fin = new Date();
+    return attendre(Array.from({ length: jours }, (_, k) => {
+      const d = new Date(fin.getTime() - (jours - 1 - k) * 24 * 60 * MIN);
+      const ech = 9, ok = [9, 9, 8, 9, 7, 9, 9, 8, 9, 6][k % 10];
+      return { jour: d.toISOString().slice(0, 10), taches_echues: ech, taches_a_lheure: ok, taches_non_faites: k % 10 === 9 ? 1 : 0, anomalies: k % 7 === 3 ? 1 : 0, anomalies_critiques: k === jours - 1 ? 1 : 0 };
+    }));
+  },
   siegeChangerStatut: async (id, statut, commentaire) => {
     const a = anomaliesGroupe.find((x) => x.id === id);
     if (!a) throw new Error("Anomalie introuvable");

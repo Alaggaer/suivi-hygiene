@@ -1,5 +1,5 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
-import type { Anomalie, AnomalieSiege, Api, Preuves, EtatFriteuse, Fournisseur, FournisseurNC, LigneSiege, SeuilsHuile, Site, Tache } from "../types";
+import type { Anomalie, AnomalieSiege, Api, EtatRestaurant, JourHistorique, Preuves, EtatFriteuse, Fournisseur, FournisseurNC, LigneSiege, SeuilsHuile, Site, Tache } from "../types";
 import { ErreurDefinitive, type Operation } from "../operations";
 
 /**
@@ -76,6 +76,10 @@ export function supabaseApi(url: string, cleAnon: string): Api {
     },
     async tableauSiege(jours) { return ok(await sb.rpc("tableau_siege_v2", { p_jours: jours })) as LigneSiege[]; },
     async fournisseursNonConformes(jours) { return ok(await sb.rpc("fournisseurs_non_conformes", { p_jours: jours })) as FournisseurNC[]; },
+    async etatRestaurants() {
+      return (ok(await sb.rpc("etat_restaurants")) as EtatRestaurant[]).map((e) => ({ ...e, huile_max: e.huile_max === null ? null : Number(e.huile_max) }));
+    },
+    async historiqueSite(siteId, jours) { return ok(await sb.rpc("historique_site", { p_site: siteId, p_jours: jours })) as JourHistorique[]; },
     async anomaliesSiege() { return ok(await sb.rpc("anomalies_siege")) as AnomalieSiege[]; },
     async siegeChangerStatut(id, statut, commentaire) {
       verifier(await sb.rpc("siege_changer_statut", { p_anomalie: id, p_statut: statut, p_commentaire: commentaire ?? null }));

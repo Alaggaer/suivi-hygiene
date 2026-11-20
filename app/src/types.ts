@@ -40,6 +40,17 @@ export interface LigneSiege {
   livraisons: number; livraisons_nc: number;
   huile_mesures: number; huile_rouges: number; huile_max: number | null; huile_trop_vieille: number;
 }
+/** État du jour d'un restaurant (cartes de l'accueil siège). */
+export interface EtatRestaurant {
+  site_id: string; nom: string; ville: string;
+  taches_total: number; taches_faites: number; taches_en_retard: number; taches_echues: number;
+  enceintes: number; enceintes_relevees: number; releves_hors_seuil: number;
+  friteuses: number; friteuses_faites: number; huile_rouges: number; huile_trop_vieille: number; huile_max: number | null;
+  livraisons: number; livraisons_nc: number; livraisons_non_rangees: number;
+  anomalies_ouvertes: number; anomalies_a_verifier: number; anomalies_critiques: number;
+  derniere_saisie: string | null; derniere_saisie_par: string | null;
+}
+export interface JourHistorique { jour: string; taches_echues: number; taches_a_lheure: number; taches_non_faites: number; anomalies: number; anomalies_critiques: number }
 /** Anomalie vue du siège : tous les restaurants, avec qui l'a créée, traitée, vérifiée. */
 export interface AnomalieSiege {
   id: string; site_id: string; restaurant: string; titre: string; categorie: string; gravite: Gravite;
@@ -79,6 +90,8 @@ export interface Api {
   tableauSiege(jours: number): Promise<LigneSiege[]>;
   fournisseursNonConformes(jours: number): Promise<FournisseurNC[]>;
   anomaliesSiege(): Promise<AnomalieSiege[]>;
+  etatRestaurants(): Promise<EtatRestaurant[]>;
+  historiqueSite(siteId: string, jours: number): Promise<JourHistorique[]>;
   /** Le siège traite ou vérifie une anomalie (en ligne uniquement, sous son propre profil). */
   siegeChangerStatut(id: string, statut: "traitee" | "verifiee", commentaire?: string): Promise<void>;
   preuvesJour(siteId: string, jour: string): Promise<Preuves>;

@@ -1,307 +1,402 @@
-import { useEffect, useState } from "react";
-import type { AnomalieSiege, Api, FournisseurNC, LigneSiege, Preuves } from "../types";
-import { scoreSite, tauxALheure } from "../logique";
-import { pct } from "../ui/outils";
+import { useEffect, useMemo, useState } from "react";
+import type { AnomalieSiege, Api, EtatRestaurant, JourHistorique, Preuves } from "../types";
+import { depuis, indicateursRestaurant, trierRestaurants, type Indicateur, type NiveauResto } from "../logique";
 
-const PERIODES = [{ j: 1, l: "Aujourd'hui" }, { j: 7, l: "7 jours" }, { j: 30, l: "30 jours" }];
+/**
+ * Espace siège :
+ * - accueil : une carte par restaurant (rouge / orange / vert), les plus préoccupants d'abord ;
+ * - fiche restaurant : à traiter, la journée, températures, huile, livraisons, traçabilité, 30 jours ; imprimable en PDF ;
+ * - anomalies à vérifier de tout le groupe.
+ */
+type Vue = { nom: "accueil" } | { nom: "resto"; id: string } | { nom: "anomalies" };
 
-function pctTxt(t: number | null) { return t === null ? "—" : `${Math.round(t * 100)} %`; }
-function niveauTaux(t: number | null) { return t === null ? "none" : t >= 0.95 ? "ok" : t >= 0.85 ? "warn" : "bad"; }
-
-type Onglet = "tableau" | "anomalies" | "preuves";
-
-/** Espace siège : tableau de bord du groupe, anomalies de tous les restaurants, preuves par restaurant et par jour. */
-export function TableauSiege({ api }: { api: Api }) {
-  const [onglet, setOnglet] = useState<Onglet>("tableau");
-  const [sites, setSites] = useState<{ id: string; nom: string }[]>([]);
-  const [sitePreuves, setSitePreuves] = useState<string | null>(null);
-  const [aTraiter, setATraiter] = useState<number | null>(null);
-  const compter = () => api.anomaliesSiege().then((l) => setATraiter(l.filter((a) => a.statut !== "verifiee").length)).catch(() => {});
-  useEffect(() => { compter(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [api]);
-  return (
-    <div className="siege">
-      <div className="opts onglets" role="tablist">
-        <button role="tab" className={`opt ${onglet === "tableau" ? "sel" : ""}`} onClick={() => setOnglet("tableau")}>Tableau de bord</button>
-        <button role="tab" className={`opt ${onglet === "anomalies" ? "sel" : ""}`} onClick={() => setOnglet("anomalies")}>
-          Anomalies{aTraiter ? <span className="compte">{aTraiter}</span> : null}
-        </button>
-        <button role="tab" className={`opt ${onglet === "preuves" ? "sel" : ""}`} onClick={() => setOnglet("preuves")}>Preuves</button>
-      </div>
-      {onglet === "tableau" && <Tableau api={api} onSites={setSites} onPreuves={(id) => { setSitePreuves(id); setOnglet("preuves"); }} />}
-      {onglet === "anomalies" && <AnomaliesSiegeVue api={api} onChange={compter} />}
-      {onglet === "preuves" && <PreuvesVue api={api} sites={sites} siteInitial={sitePreuves} />}
-    </div>
-  );
-}
-
-/** Tableau de bord : indicateurs par site, classés du site qui demande le plus d'attention au meilleur. */
-function Tableau({ api, onSites, onPreuves }: { api: Api; onSites: (s: { id: string; nom: string }[]) => void; onPreuves: (siteId: string) => void }) {
-  const [jours, setJours] = useState(7);
-  const [lignes, setLignes] = useState<LigneSiege[] | null>(null);
-  const [fournisseurs, setFournisseurs] = useState<FournisseurNC[]>([]);
-  const [ouvert, setOuvert] = useState<string | null>(null);
-  const [erreur, setErreur] = useState<string | null>(null);
-
-  useEffect(() => {
-    setLignes(null);
-    Promise.all([api.tableauSiege(jours), api.fournisseursNonConformes(Math.max(jours, 30))])
-      .then(([l, f]) => { setLignes(l); setFournisseurs(f); setErreur(null); onSites(l.map((x) => ({ id: x.site_id, nom: x.nom }))); })
-      .catch((e) => setErreur((e as Error).message));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [api, jours]);
-
-  if (erreur) return <p className="pill bad">{erreur}</p>;
-  if (!lignes) return <p className="hint">Chargement…</p>;
-
-  const tri = lignes.slice().sort((a, b) => scoreSite(b) - scoreSite(a));
-  const somme = (k: keyof LigneSiege) => lignes.reduce((n, l) => n + (Number(l[k]) || 0), 0);
-  const tauxGroupe = tauxALheure({ taches_total: somme("taches_total"), taches_a_lheure: somme("taches_a_lheure") });
-
-  return (
-    <>
-      <div className="siege-tete">
-        <h1>Tableau de bord du groupe</h1>
-        <div className="opts" role="group" aria-label="Période">
-          {PERIODES.map((p) => <button key={p.j} className={`opt ${jours === p.j ? "sel" : ""}`} onClick={() => setJours(p.j)}>{p.l}</button>)}
-        </div>
-      </div>
-
-      <div className="tuiles">
-        <div className="tuile"><span>Tâches faites à l'heure</span><b className={`t-${niveauTaux(tauxGroupe)}`}>{pctTxt(tauxGroupe)}</b><small>{somme("taches_non_faites")} non faites</small></div>
-        <div className="tuile"><span>Anomalies non traitées</span><b>{somme("anomalies_ouvertes")}</b><small className={somme("anomalies_critiques") ? "t-bad" : ""}>{somme("anomalies_critiques")} critique{somme("anomalies_critiques") > 1 ? "s" : ""} · {somme("anomalies_a_verifier")} à vérifier</small></div>
-        <div className="tuile"><span>Livraisons non conformes</span><b>{somme("livraisons_nc")}</b><small>sur {somme("livraisons")} livraisons</small></div>
-        <div className="tuile"><span>Huile au rouge</span><b className={somme("huile_rouges") ? "t-bad" : ""}>{somme("huile_rouges")}</b><small>sur {somme("huile_mesures")} mesures{somme("huile_trop_vieille") ? ` · ${somme("huile_trop_vieille")} trop vieille` : ""}</small></div>
-      </div>
-
-      <section className="panel">
-        <h2>Restaurants <small>du plus préoccupant au meilleur · touchez une ligne pour le détail</small></h2>
-        <div className="table-scroll">
-          <table className="tbl">
-            <thead><tr><th>Restaurant</th><th>Tâches à l'heure</th><th>Anomalies</th><th>Livraisons NC</th><th>Huile</th><th>Stocks morts</th></tr></thead>
-            <tbody>
-              {tri.map((l) => {
-                const t = tauxALheure(l);
-                return (
-                  <FragmentLigne key={l.site_id} ouvert={ouvert === l.site_id} onClick={() => setOuvert(ouvert === l.site_id ? null : l.site_id)}
-                    cells={[
-                      <><b>{l.nom}</b><br /><span className="hint">{l.ville}</span></>,
-                      <><span className={`pill ${niveauTaux(t)}`}>{pctTxt(t)}</span>{l.taches_non_faites > 0 && <><br /><span className="hint">{l.taches_non_faites} non faite{l.taches_non_faites > 1 ? "s" : ""}</span></>}</>,
-                      <><span className={`pill ${l.anomalies_critiques ? "bad" : l.anomalies_ouvertes > 3 ? "warn" : l.anomalies_ouvertes ? "none" : "ok"}`}>{l.anomalies_ouvertes} à traiter{l.anomalies_critiques ? ` · ${l.anomalies_critiques} critique` : ""}</span>{l.anomalies_a_verifier > 0 && <><br /><span className="hint">{l.anomalies_a_verifier} à vérifier</span></>}{l.plus_ancienne_h ? <><br /><span className="hint">plus ancienne : {l.plus_ancienne_h} h</span></> : null}</>,
-                      <span className={`pill ${l.livraisons_nc ? "warn" : "ok"}`}>{l.livraisons_nc} / {l.livraisons}</span>,
-                      <><span className={`pill ${l.huile_rouges || l.huile_trop_vieille ? "bad" : "ok"}`}>{l.huile_rouges ? `${l.huile_rouges} au rouge` : l.huile_trop_vieille ? "" : "OK"}{l.huile_trop_vieille ? `${l.huile_rouges ? " · " : ""}${l.huile_trop_vieille} trop vieille` : ""}</span>{l.huile_max !== null && <><br /><span className="hint">max {pct(Number(l.huile_max))}</span></>}</>,
-                      <span className="hint">en V1</span>,
-                    ]}
-                    detail={<Detail l={l} onPreuves={() => onPreuves(l.site_id)} />} />
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      </section>
-
-      <section className="panel">
-        <h2>Fournisseurs <small>livraisons non conformes · {Math.max(jours, 30)} derniers jours</small></h2>
-        <div className="table-scroll">
-          <table className="tbl">
-            <thead><tr><th>Fournisseur</th><th>Livraisons</th><th>Non conformes</th><th>Taux</th></tr></thead>
-            <tbody>{fournisseurs.map((f) => (
-              <tr key={f.fournisseur}><td><b>{f.fournisseur}</b></td><td className="num">{f.livraisons}</td><td className="num">{f.non_conformes}</td>
-                <td><span className={`pill ${f.non_conformes / Math.max(1, f.livraisons) > 0.05 ? "bad" : f.non_conformes ? "warn" : "ok"}`}>{pctTxt(f.non_conformes / Math.max(1, f.livraisons))}</span></td></tr>
-            ))}</tbody>
-          </table>
-        </div>
-      </section>
-    </>
-  );
-}
-
-function FragmentLigne({ cells, detail, ouvert, onClick }: { cells: React.ReactNode[]; detail: React.ReactNode; ouvert: boolean; onClick: () => void }) {
-  return (
-    <>
-      <tr className={`clic ${ouvert ? "ouvert" : ""}`} onClick={onClick} tabIndex={0} onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && onClick()} aria-expanded={ouvert}>
-        {cells.map((c, i) => <td key={i}>{c}</td>)}
-      </tr>
-      {ouvert && <tr className="detail"><td colSpan={cells.length}>{detail}</td></tr>}
-    </>
-  );
-}
-
-function Detail({ l, onPreuves }: { l: LigneSiege; onPreuves: () => void }) {
-  const lignes: [string, string][] = [
-    ["Tâches échues sur la période", `${l.taches_total}`],
-    ["Faites à l'heure", `${l.taches_a_lheure}`],
-    ["Jamais faites", `${l.taches_non_faites}`],
-    ["Anomalies à traiter / à vérifier", `${l.anomalies_ouvertes} / ${l.anomalies_a_verifier}`],
-    ["Dont critiques non closes", `${l.anomalies_critiques}`],
-    ["Livraisons non conformes", `${l.livraisons_nc} sur ${l.livraisons}`],
-    ["Mesures d'huile (au rouge)", `${l.huile_mesures} (${l.huile_rouges})`],
-    ["Friteuses à l'huile trop vieille", `${l.huile_trop_vieille}`],
-  ];
-  return (
-    <div className="detail-grille">
-      {lignes.map(([k, v]) => <div key={k}><span className="hint">{k}</span><b className="num">{v}</b></div>)}
-      <button className="opt" style={{ gridColumn: "1 / -1", justifySelf: "start" }} onClick={onPreuves}>Voir les preuves du jour de ce restaurant →</button>
-    </div>
-  );
-}
-
+const NIV: Record<NiveauResto, { libelle: string; cls: string }> = {
+  rouge: { libelle: "À surveiller", cls: "bad" }, orange: { libelle: "Attention", cls: "warn" }, vert: { libelle: "RAS", cls: "ok" },
+};
 const G = { critique: "bad", majeure: "warn", mineure: "none" } as const;
-const quand = (iso: string) => new Date(iso).toLocaleString("fr-FR", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
-const heure = (iso: string) => new Date(iso).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
+const heure = (iso: string) => new Date(iso).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/Paris" });
+const quand = (iso: string) => new Date(iso).toLocaleString("fr-FR", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", timeZone: "Europe/Paris" });
 const deg = (v: number | null) => (v === null ? "—" : `${v > 0 ? "+" : ""}${v.toLocaleString("fr-FR")} °C`);
+const aujourdHui = () => new Date().toLocaleDateString("en-CA", { timeZone: "Europe/Paris" });
+const jourLong = (j: string) => new Date(`${j}T12:00:00`).toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
 
-/** Anomalies de tout le groupe : le siège peut les marquer traitées (avec commentaire) et les vérifier. */
-function AnomaliesSiegeVue({ api, onChange }: { api: Api; onChange: () => void }) {
-  const [liste, setListe] = useState<AnomalieSiege[] | null>(null);
-  const [filtre, setFiltre] = useState<"ouverte" | "traitee" | "verifiee">("ouverte");
-  const [commentaires, setCommentaires] = useState<Record<string, string>>({});
-  const [enCours, setEnCours] = useState<string | null>(null);
+export function TableauSiege({ api }: { api: Api }) {
+  const [vue, setVue] = useState<Vue>({ nom: "accueil" });
+  const [etats, setEtats] = useState<EtatRestaurant[] | null>(null);
+  const [anomalies, setAnomalies] = useState<AnomalieSiege[]>([]);
   const [erreur, setErreur] = useState<string | null>(null);
-  const charger = () => api.anomaliesSiege().then((l) => { setListe(l); setErreur(null); }).catch((e) => setErreur((e as Error).message));
-  useEffect(() => { charger(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [api]);
+  const [maintenant, setMaintenant] = useState(() => new Date());
 
-  async function agir(a: AnomalieSiege, statut: "traitee" | "verifiee") {
-    setEnCours(a.id); setErreur(null);
-    try { await api.siegeChangerStatut(a.id, statut, commentaires[a.id]?.trim() || undefined); await charger(); onChange(); }
-    catch (e) { setErreur((e as Error).message); }
-    finally { setEnCours(null); }
-  }
+  const charger = () => Promise.all([api.etatRestaurants(), api.anomaliesSiege()])
+    .then(([e, a]) => { setEtats(e); setAnomalies(a); setErreur(null); setMaintenant(new Date()); })
+    .catch((e) => setErreur((e as Error).message));
+  useEffect(() => {
+    charger();
+    const t = setInterval(charger, 60_000);   // l'accueil se met à jour tout seul chaque minute
+    return () => clearInterval(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [api]);
+  useEffect(() => { window.scrollTo?.(0, 0); }, [vue]);
 
-  if (!liste) return erreur ? <p className="pill bad">{erreur}</p> : <p className="hint">Chargement…</p>;
-  const n = (s: string) => liste.filter((a) => a.statut === s).length;
-  const vues = liste.filter((a) => a.statut === filtre);
+  const aVerifier = anomalies.filter((a) => a.statut === "traitee").length;
+  const tries = useMemo(() => (etats ? trierRestaurants(etats, maintenant) : []), [etats, maintenant]);
+
+  if (erreur && !etats) return <p className="pill bad">{erreur}</p>;
+  if (!etats) return <p className="hint">Chargement…</p>;
+
   return (
-    <section className="panel">
-      <h2>Anomalies du groupe <small>les critiques d'abord, puis les plus anciennes</small></h2>
-      <div className="opts">
-        <button className={`opt ${filtre === "ouverte" ? "sel" : ""}`} onClick={() => setFiltre("ouverte")}>À traiter ({n("ouverte")})</button>
-        <button className={`opt ${filtre === "traitee" ? "sel" : ""}`} onClick={() => setFiltre("traitee")}>À vérifier ({n("traitee")})</button>
-        <button className={`opt ${filtre === "verifiee" ? "sel" : ""}`} onClick={() => setFiltre("verifiee")}>Vérifiées · 7 jours ({n("verifiee")})</button>
+    <div className="siege3">
+      <div className="s3-barre">
+        {vue.nom !== "accueil" && <button className="s3-retour" onClick={() => setVue({ nom: "accueil" })}>← Tous les restaurants</button>}
+        <span className="s3-date">{new Date().toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long", timeZone: "Europe/Paris" })}</span>
+        <button className={`s3-averifier ${aVerifier ? "" : "zero"}`} onClick={() => setVue({ nom: "anomalies" })}>
+          {aVerifier ? `${aVerifier} à vérifier` : "Anomalies"}
+        </button>
       </div>
-      {erreur && <p className="pill bad">{erreur}</p>}
-      {!vues.length && <p className="hint">Rien ici.</p>}
-      <div className="cartes">
-        {vues.map((a) => (
-          <div key={a.id} className={`carte ${a.gravite === "critique" && a.statut !== "verifiee" ? "bad" : ""}`}>
-            <div className="carte-tete"><b>{a.restaurant}</b><span className={`pill ${G[a.gravite]}`}>{a.gravite}</span></div>
-            <p className="carte-titre">{a.titre}</p>
-            <p className="hint">{a.categorie} · signalée {quand(a.cree_at)}{a.cree_par ? ` par ${a.cree_par}` : " automatiquement"}</p>
-            {a.traitee_at && <p className="hint">Traitée {quand(a.traitee_at)} par {a.traitee_par}{a.traitee_commentaire ? ` : « ${a.traitee_commentaire} »` : ""}</p>}
-            {a.verifiee_at && <p className="hint">Vérifiée {quand(a.verifiee_at)} par {a.verifiee_par}</p>}
-            {a.statut === "ouverte" && (
-              <div className="carte-actions">
-                <input className="champ" placeholder="Ce qui a été fait (facultatif)" value={commentaires[a.id] ?? ""}
-                  onChange={(e) => setCommentaires({ ...commentaires, [a.id]: e.target.value })} />
-                <button className="opt" disabled={enCours === a.id} onClick={() => agir(a, "traitee")}>Marquer traitée</button>
-              </div>
-            )}
-            {a.statut === "traitee" && (
-              <div className="carte-actions">
-                <button className="opt sel" disabled={enCours === a.id} onClick={() => agir(a, "verifiee")}>Vérifier et clore</button>
-              </div>
-            )}
-          </div>
-        ))}
-      </div>
-    </section>
+      {vue.nom === "accueil" && <Accueil tries={tries} anomalies={anomalies} onOuvrir={(id) => setVue({ nom: "resto", id })} />}
+      {vue.nom === "resto" && (
+        <Fiche api={api} etat={tries.find((e) => e.site_id === vue.id)!} anomalies={anomalies.filter((a) => a.site_id === vue.id)}
+          onChange={charger} maintenant={maintenant} />
+      )}
+      {vue.nom === "anomalies" && <AnomaliesGroupe api={api} liste={anomalies} onChange={charger} onOuvrir={(id) => setVue({ nom: "resto", id })} />}
+    </div>
   );
 }
 
-/** Preuves d'un restaurant pour un jour : tâches, relevés, huile, livraisons (photo du BL), traçabilité produits. */
-function PreuvesVue({ api, sites, siteInitial }: { api: Api; sites: { id: string; nom: string }[]; siteInitial: string | null }) {
-  const aujourdHui = new Date().toLocaleDateString("en-CA", { timeZone: "Europe/Paris" });
-  const [liste, setListe] = useState(sites);
-  const [site, setSite] = useState<string | null>(siteInitial ?? sites[0]?.id ?? null);
-  const [jour, setJour] = useState(aujourdHui);
+/* ---------- Accueil ---------- */
+
+type Trie = ReturnType<typeof trierRestaurants<EtatRestaurant>>[number];
+
+function Accueil({ tries, anomalies, onOuvrir }: { tries: Trie[]; anomalies: AnomalieSiege[]; onOuvrir: (id: string) => void }) {
+  const [filtre, setFiltre] = useState<NiveauResto | "tous">("tous");
+  const n = (v: NiveauResto) => tries.filter((e) => e.statut.niveau === v).length;
+  const critiques = anomalies.filter((a) => a.gravite === "critique" && a.statut !== "verifiee");
+  const nomsCritiques = [...new Set(critiques.map((a) => a.restaurant))];
+  const echues = tries.reduce((s, e) => s + e.taches_echues, 0);
+  const faitesEchues = tries.reduce((s, e) => s + (e.taches_echues - e.taches_en_retard), 0);
+  const retard = tries.reduce((s, e) => s + e.taches_en_retard, 0);
+  const muettes = tries.filter((e) => e.statut.silencieuse);
+  const taux = echues ? Math.round((faitesEchues / echues) * 100) : null;
+  const vues = filtre === "tous" ? tries : tries.filter((e) => e.statut.niveau === filtre);
+
+  return (
+    <main className="s3-main">
+      <section className="s3-chiffres" aria-label="Résumé du jour">
+        <Chiffre niveau={n("rouge") ? "bad" : "ok"} titre="Restaurants à surveiller" val={`${n("rouge")}`} sous={`sur ${tries.length} aujourd'hui`} />
+        <Chiffre niveau={critiques.length ? "bad" : "ok"} titre="Anomalies critiques en cours" val={`${critiques.length}`} sous={nomsCritiques.join(" · ") || "aucune"} />
+        <Chiffre niveau={taux === null ? "ok" : taux >= 95 ? "ok" : taux >= 85 ? "warn" : "bad"} titre="Tâches échues faites" val={taux === null ? "—" : `${taux} %`} sous={`${retard} en retard`} />
+        <Chiffre niveau={muettes.length ? "warn" : "ok"} titre="Tablettes silencieuses" val={`${muettes.length}`} sous={muettes.map((e) => e.nom).join(" · ") || "toutes actives"} />
+      </section>
+
+      <section aria-label="Restaurants">
+        <div className="s3-titre">
+          <h1>Les restaurants</h1>
+          <span className="hint">les plus préoccupants d'abord · touchez une carte pour entrer</span>
+          <div className="s3-filtres" role="group" aria-label="Filtrer">
+            {([["tous", `Tous (${tries.length})`], ["rouge", `À surveiller (${n("rouge")})`], ["orange", `Attention (${n("orange")})`], ["vert", `RAS (${n("vert")})`]] as const).map(([v, l]) => (
+              <button key={v} className={`opt ${filtre === v ? "sel" : ""}`} onClick={() => setFiltre(v)}>{l}</button>
+            ))}
+          </div>
+        </div>
+        {!vues.length && <p className="hint">Aucun restaurant dans cette catégorie.</p>}
+        <div className="s3-cartes">
+          {vues.map((e) => <CarteResto key={e.site_id} e={e} onOuvrir={() => onOuvrir(e.site_id)} />)}
+        </div>
+      </section>
+    </main>
+  );
+}
+
+function Chiffre({ niveau, titre, val, sous }: { niveau: "ok" | "warn" | "bad"; titre: string; val: string; sous: string }) {
+  return (
+    <div className={`s3-chiffre ${niveau}`}>
+      <span>{titre}</span><b>{val}</b><small>{sous}</small>
+    </div>
+  );
+}
+
+function CarteResto({ e, onOuvrir }: { e: Trie; onOuvrir: () => void }) {
+  const s = NIV[e.statut.niveau];
+  // La ligne d'activité dit déjà « tablette silencieuse » : on montre alors la raison suivante.
+  const raison = e.statut.raisons.find((r) => !(e.statut.silencieuse && /silencieuse|Aucune saisie/.test(r)));
+  return (
+    <button className={`s3-carte ${s.cls}`} onClick={onOuvrir} aria-label={`${e.nom}, ${s.libelle}${raison ? `, ${raison}` : ""}`}>
+      <span className="s3-carte-tete">
+        <span><b className="s3-nom">{e.nom}</b><span className="hint">{e.ville}</span></span>
+        <span className={`pill ${s.cls}`}>{s.libelle}</span>
+      </span>
+      <span className="s3-taches"><b>{e.taches_faites}/{e.taches_total} tâches</b> <span className="hint">{e.taches_en_retard ? `· ${e.taches_en_retard} en retard` : "· à l'heure"}</span></span>
+      <span className="s3-inds">
+        {indicateursRestaurant(e).map((i) => <Ind key={i.nom} i={i} />)}
+      </span>
+      {raison && e.statut.niveau !== "vert" && <span className={`s3-raison t-${s.cls}`}>{raison}</span>}
+      <span className={`s3-activite ${e.statut.silencieuse ? "t-warn" : ""}`}>
+        {e.statut.silencieuse
+          ? (e.derniere_saisie ? `Tablette silencieuse depuis ${depuis(e.derniere_saisie)}` : "Aucune saisie depuis 7 jours")
+          : e.derniere_saisie ? `Dernière saisie il y a ${depuis(e.derniere_saisie)}${e.derniere_saisie_par ? ` · ${e.derniere_saisie_par}` : ""}` : "Aucune saisie"}
+      </span>
+    </button>
+  );
+}
+
+function Ind({ i }: { i: Indicateur }) {
+  return <span className="s3-ind"><span className={`pt ${i.niveau}`} aria-hidden="true" /><span className="hint">{i.nom}</span> <b className={i.niveau === "bad" || i.niveau === "warn" ? `t-${i.niveau}` : ""}>{i.val}</b></span>;
+}
+
+/* ---------- Fiche restaurant ---------- */
+
+function Fiche({ api, etat, anomalies, onChange, maintenant }: { api: Api; etat: Trie | undefined; anomalies: AnomalieSiege[]; onChange: () => void; maintenant: Date }) {
+  const [jour, setJour] = useState(aujourdHui());
   const [p, setP] = useState<Preuves | null>(null);
+  const [hist, setHist] = useState<JourHistorique[]>([]);
+  const [urls, setUrls] = useState<Record<string, string>>({});
   const [photo, setPhoto] = useState<string | null>(null);
   const [erreur, setErreur] = useState<string | null>(null);
+  const id = etat?.site_id;
 
   useEffect(() => {
-    if (liste.length) return;
-    api.tableauSiege(1).then((l) => { const s = l.map((x) => ({ id: x.site_id, nom: x.nom })); setListe(s); setSite((v) => v ?? s[0]?.id ?? null); }).catch(() => {});
-  }, [api, liste.length]);
-  useEffect(() => {
-    if (!site) return;
+    if (!id) return;
     setP(null); setErreur(null);
-    api.preuvesJour(site, jour).then(setP).catch((e) => setErreur((e as Error).message));
-  }, [api, site, jour]);
-  const voir = async (chemin: string) => {
-    try { setPhoto(await api.urlPhoto(chemin)); } catch (e) { setErreur((e as Error).message); }
-  };
+    api.preuvesJour(id, jour).then(setP).catch((e) => setErreur((e as Error).message));
+  }, [api, id, jour]);
+  useEffect(() => { if (id) api.historiqueSite(id, 30).then(setHist).catch(() => setHist([])); }, [api, id]);
+  // Miniatures : liens temporaires vers les photos (bons de livraison, étiquettes).
+  useEffect(() => {
+    if (!p) return;
+    const chemins = [...p.livraisons.map((l) => l.photo_bl), ...p.produits.map((u) => u.photo)];
+    let fini = false;
+    Promise.all(chemins.map((c) => api.urlPhoto(c).then((u) => [c, u] as const).catch(() => null)))
+      .then((r) => { if (!fini) setUrls(Object.fromEntries(r.filter(Boolean) as (readonly [string, string])[])); });
+    return () => { fini = true; };
+  }, [api, p]);
+
+  if (!etat) return <p className="hint">Restaurant introuvable.</p>;
+  const s = NIV[etat.statut.niveau];
+  const ouvertes = anomalies.filter((a) => a.statut !== "verifiee");
+  const estAujourdHui = jour === aujourdHui();
+  const hier = new Date(Date.now() - 86_400_000).toLocaleDateString("en-CA", { timeZone: "Europe/Paris" });
 
   return (
-    <section className="panel preuves">
-      <h2>Preuves <small>ce qu'on montre lors d'un contrôle</small></h2>
-      <div className="preuves-choix">
-        <select className="champ" value={site ?? ""} onChange={(e) => setSite(e.target.value)} aria-label="Restaurant">
-          {liste.map((s) => <option key={s.id} value={s.id}>{s.nom}</option>)}
-        </select>
-        <input className="champ" type="date" value={jour} max={aujourdHui} onChange={(e) => e.target.value && setJour(e.target.value)} aria-label="Jour" />
+    <main className="s3-main s3-fiche">
+      <div className="s3-fiche-tete">
+        <div>
+          <h1>{etat.nom} <span className="hint">· {etat.ville}</span></h1>
+          <p className="hint imprime-seul">Dossier de contrôle · {jourLong(jour)} · édité le {quand(new Date().toISOString())}</p>
+          <p className="hint ecran-seul">
+            {etat.statut.silencieuse ? <span className="t-warn">Tablette silencieuse</span> : etat.derniere_saisie ? `Dernière saisie il y a ${depuis(etat.derniere_saisie, maintenant)}${etat.derniere_saisie_par ? ` · ${etat.derniere_saisie_par}` : ""}` : "Aucune saisie récente"}
+          </p>
+        </div>
+        <span className={`pill ${s.cls} ecran-seul`}>{s.libelle}</span>
       </div>
+
+      <div className="s3-jours ecran-seul">
+        <button className={`opt ${jour === aujourdHui() ? "sel" : ""}`} onClick={() => setJour(aujourdHui())}>Aujourd'hui</button>
+        <button className={`opt ${jour === hier ? "sel" : ""}`} onClick={() => setJour(hier)}>Hier</button>
+        <label className="s3-autre">Autre jour <input className="champ" type="date" value={jour} max={aujourdHui()} onChange={(e) => e.target.value && setJour(e.target.value)} /></label>
+        <button className="s3-pdf" onClick={() => window.print()}>Dossier de contrôle (PDF)</button>
+      </div>
+
+      {ouvertes.length > 0 && <ATraiter api={api} liste={ouvertes} onChange={onChange} />}
+      {estAujourdHui && etat.statut.raisons.length > 0 && ouvertes.length === 0 && (
+        <p className={`s3-raisons t-${s.cls}`}>{etat.statut.raisons.join(" · ")}</p>
+      )}
+
       {erreur && <p className="pill bad">{erreur}</p>}
       {!p && !erreur && <p className="hint">Chargement…</p>}
       {p && (
         <>
-          <Bloc titre="Tâches du jour" vide={!p.taches.length}>
-            <table className="tbl"><tbody>{p.taches.map((t, i) => (
-              <tr key={i}><td><b>{t.titre}</b></td><td>avant {heure(t.echeance)}</td>
-                <td>{t.faite_at
-                  ? <span className={`pill ${new Date(t.faite_at) <= new Date(t.echeance) ? "ok" : "warn"}`}>faite à {heure(t.faite_at)}{t.par ? ` · ${t.par}` : ""}</span>
-                  : <span className="pill bad">non faite</span>}</td></tr>
-            ))}</tbody></table>
-          </Bloc>
-          <Bloc titre="Relevés de températures" vide={!p.releves.length}>
-            <table className="tbl"><tbody>{p.releves.map((r, i) => (
-              <tr key={i}><td>{heure(r.at)}</td><td><b>{r.enceinte}</b></td><td className="num">{deg(r.valeur)}</td>
-                <td><span className={`pill ${r.conforme ? "ok" : "bad"}`}>{r.conforme ? "conforme" : `max ${deg(r.t_max)}`}</span>{r.action && <><br /><span className="hint">{r.action}</span></>}</td><td className="hint">{r.par}</td></tr>
-            ))}</tbody></table>
-          </Bloc>
-          <Bloc titre="Huile" vide={!p.huiles.length}>
-            <table className="tbl"><tbody>{p.huiles.map((h, i) => (
-              <tr key={i}><td>{heure(h.at)}</td><td><b>{h.friteuse}</b></td>
-                <td>{h.non_utilisee ? <span className="pill none">non utilisée</span> : <span className="num">{h.polaires === null ? "—" : `${h.polaires.toLocaleString("fr-FR")} %`}</span>}</td>
-                <td className="hint">{[h.filtrage && "filtrée", h.changement && "huile changée"].filter(Boolean).join(" · ")}</td><td className="hint">{h.par}</td></tr>
-            ))}</tbody></table>
-          </Bloc>
-          <Bloc titre="Livraisons" vide={!p.livraisons.length}>
-            <table className="tbl"><tbody>{p.livraisons.map((l, i) => (
-              <tr key={i}><td>{heure(l.at)}</td><td><b>{l.fournisseur}</b>{l.viande && <><br /><span className="hint">viande · origine {l.origine_ok ? "vérifiée" : "non vérifiée"}</span></>}</td>
-                <td className="hint">camion {deg(l.t_camion)}{l.t_frais !== null ? ` · frais ${deg(l.t_frais)}` : ""}{l.t_surgele !== null ? ` · surgelé ${deg(l.t_surgele)}` : ""}</td>
-                <td><span className={`pill ${l.conforme ? "ok" : "bad"}`}>{l.conforme ? "conforme" : "non conforme"}</span>{!l.conforme && <><br /><span className="hint">{(l.motifs ?? []).join(", ")} · {l.action}</span></>}
-                  <br /><span className="hint">{l.range_at ? `rangée à ${heure(l.range_at)}` : "rangement non validé"}</span></td>
-                <td><button className="lien" onClick={() => voir(l.photo_bl)}>Bon de livraison</button>{l.photo_nc && <><br /><button className="lien" onClick={() => voir(l.photo_nc!)}>Photo du problème</button></>}</td></tr>
-            ))}</tbody></table>
-          </Bloc>
-          <Bloc titre="Traçabilité produits" vide={!p.produits.length}>
-            <table className="tbl"><tbody>{p.produits.map((u, i) => (
-              <tr key={i}><td>{heure(u.at)}</td><td><b>{u.famille}</b></td><td className="hint">service du {u.service}</td><td className="hint">{u.par}</td>
-                <td><button className="lien" onClick={() => voir(u.photo)}>Étiquette</button></td></tr>
-            ))}</tbody></table>
-          </Bloc>
-          <Bloc titre="Anomalies signalées ce jour" vide={!p.anomalies.length}>
-            <table className="tbl"><tbody>{p.anomalies.map((a, i) => (
-              <tr key={i}><td>{heure(a.at)}</td><td>{a.titre}</td><td><span className={`pill ${G[a.gravite]}`}>{a.gravite}</span></td>
-                <td className="hint">{a.statut === "ouverte" ? "à traiter" : a.statut === "traitee" ? "traitée, à vérifier" : "vérifiée"}</td></tr>
-            ))}</tbody></table>
-          </Bloc>
+          <div className="s3-deux">
+            <section className="s3-bloc" aria-label="La journée">
+              <h2>La journée <small>{p.taches.filter((t) => t.faite_at).length} tâches faites sur {p.taches.length}</small></h2>
+              {!p.taches.length ? <p className="hint">Aucune tâche prévue.</p> : (
+                <ol className="s3-journee">
+                  {p.taches.map((t, i) => {
+                    const passee = new Date(t.echeance) < new Date();
+                    const [lib, cls] = t.faite_at
+                      ? [new Date(t.faite_at) <= new Date(t.echeance) ? `faite ${heure(t.faite_at)}` : `en retard · ${heure(t.faite_at)}`, new Date(t.faite_at) <= new Date(t.echeance) ? "ok" : "warn"]
+                      : passee ? ["non faite", "bad"] : ["à venir", "none"];
+                    return <li key={i}><span className="num hint">{heure(t.echeance)}</span><span>{t.titre}{t.par ? <span className="hint"> · {t.par}</span> : null}</span><span className={`pill ${cls}`}>{lib}</span></li>;
+                  })}
+                </ol>
+              )}
+            </section>
+            <div className="s3-pile">
+              <section className="s3-bloc" aria-label="Températures">
+                <h2>Températures <small>{p.releves.length} relevés</small></h2>
+                {!p.releves.length ? <p className="hint">Aucun relevé ce jour.</p> : (
+                  <div className="table-scroll"><table className="tbl"><tbody>{p.releves.map((r, i) => (
+                    <tr key={i}><td className="num hint">{heure(r.at)}</td><td><b>{r.enceinte}</b></td>
+                      <td className={`num ${r.conforme ? "" : "t-bad"}`}><b>{deg(r.valeur)}</b></td>
+                      <td>{r.conforme ? <span className="hint">max {deg(r.t_max)}</span> : <><span className="pill bad">max {deg(r.t_max)}</span>{r.action && <><br /><span className="hint">{r.action}</span></>}</>}</td>
+                      <td className="hint">{r.par}</td></tr>
+                  ))}</tbody></table></div>
+                )}
+              </section>
+              <section className="s3-bloc" aria-label="Huile">
+                <h2>Huile</h2>
+                {!p.huiles.length ? <p className="hint">Aucune mesure ce jour.</p> : (
+                  <div className="s3-friteuses">{p.huiles.map((h, i) => {
+                    const v = h.polaires, cls = h.non_utilisee ? "none" : v === null ? "none" : v >= 25 ? "bad" : v >= 20 ? "warn" : "ok";
+                    return (
+                      <div key={i} className="s3-friteuse">
+                        <div className="s3-friteuse-tete"><b>{h.friteuse}</b><b className={cls === "bad" || cls === "warn" ? `t-${cls}` : ""}>{h.non_utilisee ? "—" : v === null ? "—" : `${v.toLocaleString("fr-FR")} %`}</b></div>
+                        <div className="s3-jauge"><span className={cls} style={{ width: `${Math.min(100, ((v ?? 0) / 25) * 100)}%` }} /></div>
+                        <div className="hint">{h.non_utilisee ? "non utilisée" : [h.filtrage && "filtrée", h.changement && "huile changée"].filter(Boolean).join(" · ") || "mesurée"} · {heure(h.at)} · {h.par}</div>
+                      </div>
+                    );
+                  })}</div>
+                )}
+              </section>
+            </div>
+          </div>
+
+          <section className="s3-bloc" aria-label="Livraisons">
+            <h2>Livraisons <small>{p.livraisons.length}</small></h2>
+            {!p.livraisons.length ? <p className="hint">Aucune livraison ce jour.</p> : (
+              <div className="s3-livraisons">{p.livraisons.map((l, i) => (
+                <div key={i} className="s3-livraison">
+                  <button className="s3-vignette" onClick={() => urls[l.photo_bl] && setPhoto(urls[l.photo_bl])} aria-label={`Bon de livraison ${l.fournisseur}`}>
+                    {urls[l.photo_bl] ? <img src={urls[l.photo_bl]} alt="" /> : <span>BL</span>}
+                  </button>
+                  <div>
+                    <div><b>{l.fournisseur}</b> <span className="hint">· {heure(l.at)} · {l.par}</span></div>
+                    <div className="hint">Camion {deg(l.t_camion)}{l.t_frais !== null ? ` · frais ${deg(l.t_frais)}` : ""}{l.t_surgele !== null ? ` · surgelé ${deg(l.t_surgele)}` : ""}</div>
+                    {l.viande && <div className="hint">Viande · origine {l.origine_ok ? "vérifiée" : "non vérifiée"}</div>}
+                    <div className="s3-pills">
+                      <span className={`pill ${l.conforme ? "ok" : "bad"}`}>{l.conforme ? "conforme" : "non conforme"}</span>
+                      <span className={`pill ${l.range_at ? "none" : "warn"}`}>{l.range_at ? `rangée ${heure(l.range_at)}` : "rangement non validé"}</span>
+                    </div>
+                    {!l.conforme && <div className="hint">{(l.motifs ?? []).join(", ")} · {l.action}</div>}
+                  </div>
+                </div>
+              ))}</div>
+            )}
+          </section>
+
+          <section className="s3-bloc" aria-label="Traçabilité produits">
+            <h2>Traçabilité produits <small>{p.produits.length} étiquettes</small></h2>
+            {!p.produits.length ? <p className="hint">Aucune étiquette ce jour.</p> : (
+              <div className="s3-produits">{p.produits.map((u, i) => (
+                <button key={i} className="s3-produit" onClick={() => urls[u.photo] && setPhoto(urls[u.photo])} aria-label={`Étiquette ${u.famille}`}>
+                  <span className="s3-produit-img">{urls[u.photo] ? <img src={urls[u.photo]} alt="" /> : null}</span>
+                  <span className="s3-produit-txt"><b>{u.famille}</b><br /><span className="hint">{u.service} · {heure(u.at)} · {u.par}</span></span>
+                </button>
+              ))}</div>
+            )}
+          </section>
+
+          {p.anomalies.length > 0 && (
+            <section className="s3-bloc" aria-label="Anomalies du jour">
+              <h2>Anomalies signalées ce jour</h2>
+              <div className="table-scroll"><table className="tbl"><tbody>{p.anomalies.map((a, i) => (
+                <tr key={i}><td className="num hint">{heure(a.at)}</td><td>{a.titre}</td><td><span className={`pill ${G[a.gravite]}`}>{a.gravite}</span></td>
+                  <td className="hint">{a.statut === "ouverte" ? "à traiter" : a.statut === "traitee" ? "traitée, à vérifier" : "vérifiée"}</td></tr>
+              ))}</tbody></table></div>
+            </section>
+          )}
         </>
       )}
+
+      {hist.length > 0 && <Tendance hist={hist} />}
+
       {photo && (
         <div className="visionneuse" onClick={() => setPhoto(null)} role="dialog" aria-label="Photo">
           <img src={photo} alt="Photo" />
           <button className="opt">Fermer</button>
         </div>
       )}
+    </main>
+  );
+}
+
+function Tendance({ hist }: { hist: JourHistorique[] }) {
+  const ech = hist.reduce((s, h) => s + h.taches_echues, 0), ok = hist.reduce((s, h) => s + h.taches_a_lheure, 0);
+  const crit = hist.reduce((s, h) => s + h.anomalies_critiques, 0), anom = hist.reduce((s, h) => s + h.anomalies, 0);
+  return (
+    <section className="s3-bloc ecran-seul" aria-label="30 derniers jours">
+      <h2>30 derniers jours</h2>
+      <p className="hint">Tâches faites à l'heure, jour par jour · moyenne {ech ? Math.round((ok / ech) * 100) : "—"} % · {anom} anomalie{anom > 1 ? "s" : ""} dont {crit} critique{crit > 1 ? "s" : ""}</p>
+      <div className="s3-barres" role="img" aria-label="Part des tâches faites à l'heure sur 30 jours">
+        {hist.map((h) => {
+          const t = h.taches_echues ? h.taches_a_lheure / h.taches_echues : null;
+          const cls = t === null ? "none" : t >= 0.95 ? "ok" : t >= 0.85 ? "warn" : "bad";
+          return <span key={h.jour} className={cls} style={{ height: `${t === null ? 6 : Math.max(6, t * 100)}%` }} title={`${h.jour} : ${t === null ? "rien d'échu" : `${Math.round(t * 100)} %`}${h.anomalies_critiques ? " · critique" : ""}`} />;
+        })}
+      </div>
     </section>
   );
 }
 
-function Bloc({ titre, vide, children }: { titre: string; vide: boolean; children: React.ReactNode }) {
+/* ---------- Anomalies : traiter / vérifier ---------- */
+
+function useAction(api: Api, onChange: () => void) {
+  const [enCours, setEnCours] = useState<string | null>(null);
+  const [erreur, setErreur] = useState<string | null>(null);
+  const agir = async (id: string, statut: "traitee" | "verifiee", commentaire?: string) => {
+    setEnCours(id); setErreur(null);
+    try { await api.siegeChangerStatut(id, statut, commentaire?.trim() || undefined); onChange(); }
+    catch (e) { setErreur((e as Error).message); }
+    finally { setEnCours(null); }
+  };
+  return { enCours, erreur, agir };
+}
+
+function CarteAnomalie({ a, avecResto, enCours, agir, onOuvrir }: {
+  a: AnomalieSiege; avecResto: boolean; enCours: boolean; agir: (id: string, s: "traitee" | "verifiee", c?: string) => void; onOuvrir?: () => void;
+}) {
+  const [com, setCom] = useState("");
   return (
-    <div className="bloc">
-      <h3>{titre}</h3>
-      {vide ? <p className="hint">Aucune saisie.</p> : <div className="table-scroll">{children}</div>}
+    <div className={`carte s3-anom ${a.statut === "verifiee" ? "" : a.gravite === "critique" ? "bad" : a.statut === "traitee" ? "warn" : ""}`}>
+      <div className="carte-tete">
+        {avecResto ? <button className="lien" onClick={onOuvrir}><b>{a.restaurant}</b></button> : <b>{a.titre}</b>}
+        <span className={`pill ${a.statut === "traitee" ? "warn" : G[a.gravite]}`}>{a.statut === "traitee" ? "à vérifier" : a.statut === "verifiee" ? "vérifiée" : a.gravite}</span>
+      </div>
+      {avecResto && <p className="carte-titre">{a.titre}</p>}
+      <p className="hint">{a.categorie} · signalée {quand(a.cree_at)}{a.cree_par ? ` par ${a.cree_par}` : " automatiquement"}</p>
+      {a.traitee_at && <p className="hint">Traitée {quand(a.traitee_at)} par {a.traitee_par}{a.traitee_commentaire ? ` : « ${a.traitee_commentaire} »` : ""}</p>}
+      {a.verifiee_at && <p className="hint">Vérifiée {quand(a.verifiee_at)} par {a.verifiee_par}</p>}
+      {a.statut === "ouverte" && (
+        <div className="carte-actions">
+          <label className="champ-label"><span className="sr">Ce qui a été fait</span>
+            <input className="champ" placeholder="Ce qui a été fait (facultatif)" value={com} onChange={(e) => setCom(e.target.value)} />
+          </label>
+          <button className="opt" disabled={enCours} onClick={() => agir(a.id, "traitee", com)}>Marquer traitée</button>
+        </div>
+      )}
+      {a.statut === "traitee" && (
+        <div className="carte-actions"><button className="s3-verifier" disabled={enCours} onClick={() => agir(a.id, "verifiee")}>Vérifier et clore</button></div>
+      )}
     </div>
+  );
+}
+
+function ATraiter({ api, liste, onChange }: { api: Api; liste: AnomalieSiege[]; onChange: () => void }) {
+  const { enCours, erreur, agir } = useAction(api, onChange);
+  return (
+    <section className="s3-atraiter" aria-label="À traiter">
+      <h2>À traiter <small>{liste.length} anomalie{liste.length > 1 ? "s" : ""}</small></h2>
+      {erreur && <p className="pill bad">{erreur}</p>}
+      <div className="cartes">{liste.map((a) => <CarteAnomalie key={a.id} a={a} avecResto={false} enCours={enCours === a.id} agir={agir} />)}</div>
+    </section>
+  );
+}
+
+function AnomaliesGroupe({ api, liste, onChange, onOuvrir }: { api: Api; liste: AnomalieSiege[]; onChange: () => void; onOuvrir: (id: string) => void }) {
+  const [filtre, setFiltre] = useState<"traitee" | "ouverte" | "verifiee">(liste.some((a) => a.statut === "traitee") ? "traitee" : "ouverte");
+  const { enCours, erreur, agir } = useAction(api, onChange);
+  const n = (s: string) => liste.filter((a) => a.statut === s).length;
+  const vues = liste.filter((a) => a.statut === filtre);
+  return (
+    <main className="s3-main">
+      <div className="s3-titre"><h1>Anomalies du groupe</h1><span className="hint">les critiques d'abord, puis les plus anciennes</span></div>
+      <div className="s3-filtres">
+        <button className={`opt ${filtre === "traitee" ? "sel" : ""}`} onClick={() => setFiltre("traitee")}>À vérifier ({n("traitee")})</button>
+        <button className={`opt ${filtre === "ouverte" ? "sel" : ""}`} onClick={() => setFiltre("ouverte")}>À traiter ({n("ouverte")})</button>
+        <button className={`opt ${filtre === "verifiee" ? "sel" : ""}`} onClick={() => setFiltre("verifiee")}>Vérifiées · 7 jours ({n("verifiee")})</button>
+      </div>
+      {erreur && <p className="pill bad">{erreur}</p>}
+      {!vues.length && <p className="hint">Rien ici.</p>}
+      <div className="cartes">{vues.map((a) => <CarteAnomalie key={a.id} a={a} avecResto enCours={enCours === a.id} agir={agir} onOuvrir={() => onOuvrir(a.site_id)} />)}</div>
+    </main>
   );
 }

@@ -127,3 +127,79 @@ export function scoreSite(l: {
     + l.anomalies_ouvertes * 5 + (l.anomalies_a_verifier ?? 0) * 2 + l.livraisons_nc * 10 + l.huile_rouges * 10
     + (l.huile_trop_vieille ?? 0) * 15;
 }
+
+/* ---------- Siège : état d'un restaurant ---------- */
+export type NiveauResto = "rouge" | "orange" | "vert";
+export interface Indicateur { nom: string; val: string; niveau: "ok" | "warn" | "bad" | "neutre" }
+type EtatR = import("./types").EtatRestaurant;
+
+/** Heures (Paris) pendant lesquelles une tablette muette est anormale, et durée de silence tolérée. */
+export const SILENCE = { debut: 10, fin: 23, heures: 3 };
+
+function heureParis(d: Date): number {
+  return Number(new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/Paris", hour: "2-digit", hourCycle: "h23" }).format(d));
+}
+/** Tablette silencieuse : rien saisi depuis plus de 3 h pendant les heures d'ouverture. */
+export function tabletteSilencieuse(e: Pick<EtatR, "derniere_saisie">, maintenant = new Date()): boolean {
+  const h = heureParis(maintenant);
+  if (h < SILENCE.debut || h >= SILENCE.fin) return false;
+  if (!e.derniere_saisie) return true;
+  return maintenant.getTime() - new Date(e.derniere_saisie).getTime() > SILENCE.heures * 3600_000;
+}
+const pl = (n: number, s: string, p = s + "s") => `${n} ${n > 1 ? p : s}`;
+
+/** Couleur d'un restaurant et les raisons, de la plus grave à la moins grave. */
+export function statutRestaurant(e: EtatR, maintenant = new Date()): { niveau: NiveauResto; raisons: string[]; silencieuse: boolean } {
+  const silencieuse = tabletteSilencieuse(e, maintenant);
+  const rouges: string[] = [], oranges: string[] = [];
+  if (e.anomalies_critiques) rouges.push(pl(e.anomalies_critiques, "anomalie critique", "anomalies critiques"));
+  if (silencieuse) rouges.push(e.derniere_saisie ? `Tablette silencieuse depuis ${depuis(e.derniere_saisie, maintenant)}` : "Aucune saisie récente");
+  if (e.taches_en_retard >= 2) rouges.push(`${e.taches_en_retard} tâches en retard`);
+  if (e.taches_en_retard === 1) oranges.push("1 tâche en retard");
+  if (e.releves_hors_seuil) oranges.push(`${pl(e.releves_hors_seuil, "température")} hors seuil`);
+  if (e.huile_trop_vieille) oranges.push(`Huile trop vieille (${pl(e.huile_trop_vieille, "friteuse")})`);
+  if (e.huile_rouges) oranges.push(`Huile au rouge (${pl(e.huile_rouges, "mesure")})`);
+  if (e.livraisons_nc) oranges.push(pl(e.livraisons_nc, "livraison non conforme", "livraisons non conformes"));
+  if (e.anomalies_ouvertes) oranges.push(pl(e.anomalies_ouvertes, "anomalie à traiter", "anomalies à traiter"));
+  if (e.anomalies_a_verifier) oranges.push(pl(e.anomalies_a_verifier, "anomalie à vérifier", "anomalies à vérifier"));
+  const niveau: NiveauResto = rouges.length ? "rouge" : oranges.length ? "orange" : "vert";
+  return { niveau, raisons: [...rouges, ...oranges], silencieuse };
+}
+
+/** Les 4 indicateurs d'une carte restaurant. */
+export function indicateursRestaurant(e: EtatR): Indicateur[] {
+  const temp: Indicateur = e.releves_hors_seuil ? { nom: "Températures", val: `${e.releves_hors_seuil} hors seuil`, niveau: "bad" }
+    : !e.enceintes ? { nom: "Températures", val: "—", niveau: "neutre" }
+    : e.enceintes_relevees >= e.enceintes ? { nom: "Températures", val: "OK", niveau: "ok" }
+    : e.enceintes_relevees === 0 ? { nom: "Températures", val: "pas encore", niveau: "neutre" }
+    : { nom: "Températures", val: `${e.enceintes_relevees}/${e.enceintes} relevées`, niveau: "warn" };
+  const huile: Indicateur = e.huile_trop_vieille ? { nom: "Huile", val: `${e.huile_trop_vieille} trop vieille`, niveau: "bad" }
+    : e.huile_rouges ? { nom: "Huile", val: `${e.huile_rouges} au rouge`, niveau: "bad" }
+    : !e.friteuses ? { nom: "Huile", val: "—", niveau: "neutre" }
+    : e.friteuses_faites === 0 ? { nom: "Huile", val: "pas encore", niveau: "neutre" }
+    : e.friteuses_faites < e.friteuses ? { nom: "Huile", val: `${e.friteuses_faites}/${e.friteuses} faites`, niveau: "warn" }
+    : { nom: "Huile", val: e.huile_max === null ? "OK" : `OK · ${String(e.huile_max).replace(".", ",")} %`, niveau: "ok" };
+  const livr: Indicateur = e.livraisons_nc ? { nom: "Livraisons", val: `${e.livraisons_nc} non conforme${e.livraisons_nc > 1 ? "s" : ""}`, niveau: "warn" }
+    : e.livraisons_non_rangees ? { nom: "Livraisons", val: `${e.livraisons_non_rangees} non rangée${e.livraisons_non_rangees > 1 ? "s" : ""}`, niveau: "warn" }
+    : e.livraisons ? { nom: "Livraisons", val: `${e.livraisons} conforme${e.livraisons > 1 ? "s" : ""}`, niveau: "ok" }
+    : { nom: "Livraisons", val: "aucune", niveau: "neutre" };
+  const anom: Indicateur = e.anomalies_critiques ? { nom: "Anomalies", val: `${e.anomalies_critiques} critique${e.anomalies_critiques > 1 ? "s" : ""}`, niveau: "bad" }
+    : e.anomalies_ouvertes ? { nom: "Anomalies", val: `${e.anomalies_ouvertes} à traiter`, niveau: "warn" }
+    : e.anomalies_a_verifier ? { nom: "Anomalies", val: `${e.anomalies_a_verifier} à vérifier`, niveau: "warn" }
+    : { nom: "Anomalies", val: "0", niveau: "ok" };
+  return [temp, huile, livr, anom];
+}
+
+/** « 6 min », « 3 h 10 », « 2 j ». */
+export function depuis(iso: string, maintenant = new Date()): string {
+  const m = Math.max(0, Math.round((maintenant.getTime() - new Date(iso).getTime()) / 60_000));
+  if (m < 60) return `${m} min`;
+  if (m < 24 * 60) { const h = Math.floor(m / 60), r = m % 60; return r ? `${h} h ${String(r).padStart(2, "0")}` : `${h} h`; }
+  return `${Math.floor(m / 1440)} j`;
+}
+const ORDRE_RESTO: Record<NiveauResto, number> = { rouge: 0, orange: 1, vert: 2 };
+/** Tri de l'accueil : rouge, orange, vert ; à niveau égal, le plus de raisons d'abord, puis par nom. */
+export function trierRestaurants<T extends EtatR>(liste: T[], maintenant = new Date()): (T & { statut: ReturnType<typeof statutRestaurant> })[] {
+  return liste.map((e) => ({ ...e, statut: statutRestaurant(e, maintenant) }))
+    .sort((a, b) => ORDRE_RESTO[a.statut.niveau] - ORDRE_RESTO[b.statut.niveau] || b.statut.raisons.length - a.statut.raisons.length || a.nom.localeCompare(b.nom, "fr"));
+}
