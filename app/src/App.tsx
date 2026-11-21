@@ -53,6 +53,14 @@ export default function App({ api, file }: { api: Api; file: FileEnvoi }) {
   const [enLigne, setEnLigne] = useState(typeof navigator === "undefined" ? true : navigator.onLine);
   const { etat: etatFile, entrees } = useFile(file);
   const minuteurs = useMinuteurs();
+  const [voirRefusees, setVoirRefusees] = useState(false);
+  // Au démarrage (souvent après une mise à jour qui corrige la cause), les saisies refusées sont retentées une fois.
+  const retente = useRef(false);
+  useEffect(() => {
+    if (retente.current || !entrees.length) return;
+    retente.current = true;
+    entrees.filter((e) => e.statut === "bloquee").forEach((e) => file.relancer(e.cle));
+  }, [entrees, file]);
   const maintenant = useMaintenant(10_000);
 
   useEffect(() => { api.estActivee().then(setActivee); }, [api]);
@@ -120,7 +128,7 @@ export default function App({ api, file }: { api: Api; file: FileEnvoi }) {
       <div className="top">
         <span className="site">{siege ? "Siège · Suivi Hygiène" : site ? `${site.nom} · ${site.ville}` : "Suivi Hygiène"}</span>
         {profil && <span className="who">{profil.nom} <button className="chipbtn" onClick={() => { setProfil(null); setEcran({ nom: "accueil" }); }}>Changer d'utilisateur</button></span>}
-        {!siege && <Synchro enLigne={enLigne} attente={etatFile.attente} bloquees={etatFile.bloquees} />}
+        {!siege && <Synchro enLigne={enLigne} attente={etatFile.attente} bloquees={etatFile.bloquees} onVoir={() => setVoirRefusees(true)} />}
         <span className="clock num">{hm(maintenant)}</span>
       </div>
       {api.mode === "demo" && (
@@ -133,13 +141,14 @@ export default function App({ api, file }: { api: Api; file: FileEnvoi }) {
       {erreur && profil && <div className="demo" style={{ background: "var(--bad-bg)", color: "var(--bad)" }}>{erreur}</div>}
       {profil && <Bandeau minuteurs={minuteurs.liste} retirer={minuteurs.retirer} />}
       <main id="main">{corps}</main>
+      {voirRefusees && <SaisiesRefusees entrees={entrees.filter((e) => e.statut === "bloquee")} onRelancer={(cle) => file.relancer(cle)} onFermer={() => setVoirRefusees(false)} />}
     </div>
   );
   return site && profil ? <ContexteProvider valeur={{ api, file, site, profil }}>{contenu}</ContexteProvider> : contenu;
 }
 
-function Synchro({ enLigne, attente, bloquees }: { enLigne: boolean; attente: number; bloquees: number }) {
-  if (bloquees) return <span className="sync bad" title="Des saisies ont été refusées par le serveur : prévenez le siège">{bloquees} saisie{bloquees > 1 ? "s" : ""} refusée{bloquees > 1 ? "s" : ""}</span>;
+function Synchro({ enLigne, attente, bloquees, onVoir }: { enLigne: boolean; attente: number; bloquees: number; onVoir: () => void }) {
+  if (bloquees) return <button className="sync bad" onClick={onVoir}>{bloquees} saisie{bloquees > 1 ? "s" : ""} refusée{bloquees > 1 ? "s" : ""} · voir</button>;
   if (attente) return <span className="sync warn">{enLigne ? "Envoi…" : "Hors ligne"} · {attente} en attente</span>;
   return <span className="sync ok">{enLigne ? "Tout est envoyé" : "Hors ligne"}</span>;
 }
@@ -228,4 +237,31 @@ function bip() {
     o.frequency.value = 880; g.gain.value = 0.15; o.connect(g); g.connect(audio.destination);
     o.start(); o.stop(audio.currentTime + 0.25);
   } catch { /* son indisponible */ }
+}
+
+const LIBELLE_OP: Record<string, string> = {
+  releves: "Relevé de températures", huile: "Mesure de l'huile", anomalies: "Signalement d'anomalie", terminer_tache: "Tâche terminée",
+  livraison: "Réception de livraison", livraison_rangee: "Livraison rangée", utilisation: "Traçabilité produit",
+  minuteur: "Refroidissement / remise en température", anomalie_statut: "Suivi d'anomalie",
+};
+
+/** Saisies que le serveur a refusées : ce que c'était, quand, pourquoi, et un bouton pour réessayer. */
+function SaisiesRefusees({ entrees, onRelancer, onFermer }: { entrees: Entree[]; onRelancer: (cle: number) => void; onFermer: () => void }) {
+  return (
+    <div id="sheet" className="open" role="dialog" aria-modal="true" aria-label="Saisies refusées" onClick={(e) => e.target === e.currentTarget && onFermer()}>
+      <div className="pad refusees">
+        <h3>Saisies refusées par le serveur</h3>
+        <p className="hint">Elles sont gardées sur la tablette et n'ont pas été enregistrées. Réessayez ; si le refus continue, prévenez le siège avec le motif affiché.</p>
+        {!entrees.length && <p className="pill ok">Plus aucune saisie refusée.</p>}
+        {entrees.map((e) => (
+          <div key={e.cle} className="refusee">
+            <div><b>{LIBELLE_OP[e.op.type] ?? e.op.type}</b> · <span className="hint">{new Date(e.op.at_client).toLocaleString("fr-FR", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</span></div>
+            <div className="hint">Motif : {e.erreur ?? "inconnu"}</div>
+            <button className="opt" onClick={() => onRelancer(e.cle)}>Réessayer</button>
+          </div>
+        ))}
+        <button className="bigbtn" onClick={onFermer}>Fermer</button>
+      </div>
+    </div>
+  );
 }

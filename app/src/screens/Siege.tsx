@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import type { AnomalieSiege, Api, EtatRestaurant, JourHistorique, Preuves } from "../types";
-import { depuis, indicateursRestaurant, trierRestaurants, type Indicateur, type NiveauResto } from "../logique";
+import type { AnomalieSiege, Api, Correction, EtatRestaurant, JourHistorique, Preuves, TableCorrigeable } from "../types";
+import { BORNES_HUILE, bornesReleve, dansBornes, depuis, indicateursRestaurant, trierRestaurants, type Bornes, type Indicateur, type NiveauResto } from "../logique";
 
 /**
  * Espace siège :
@@ -152,13 +152,15 @@ function Fiche({ api, etat, anomalies, onChange, maintenant }: { api: Api; etat:
   const [urls, setUrls] = useState<Record<string, string>>({});
   const [photo, setPhoto] = useState<string | null>(null);
   const [erreur, setErreur] = useState<string | null>(null);
+  const [aCorriger, setACorriger] = useState<ACorriger | null>(null);
+  const [rev, setRev] = useState(0);
   const id = etat?.site_id;
 
   useEffect(() => {
     if (!id) return;
     setP(null); setErreur(null);
     api.preuvesJour(id, jour).then(setP).catch((e) => setErreur((e as Error).message));
-  }, [api, id, jour]);
+  }, [api, id, jour, rev]);
   useEffect(() => { if (id) api.historiqueSite(id, 30).then(setHist).catch(() => setHist([])); }, [api, id]);
   // Miniatures : liens temporaires vers les photos (bons de livraison, étiquettes).
   useEffect(() => {
@@ -224,24 +226,32 @@ function Fiche({ api, etat, anomalies, onChange, maintenant }: { api: Api; etat:
               <section className="s3-bloc" aria-label="Températures">
                 <h2>Températures <small>{p.releves.length} relevés</small></h2>
                 {!p.releves.length ? <p className="hint">Aucun relevé ce jour.</p> : (
-                  <div className="table-scroll"><table className="tbl"><tbody>{p.releves.map((r, i) => (
-                    <tr key={i}><td className="num hint">{heure(r.at)}</td><td><b>{r.enceinte}</b></td>
-                      <td className={`num ${r.conforme ? "" : "t-bad"}`}><b>{deg(r.valeur)}</b></td>
-                      <td>{r.conforme ? <span className="hint">max {deg(r.t_max)}</span> : <><span className="pill bad">max {deg(r.t_max)}</span>{r.action && <><br /><span className="hint">{r.action}</span></>}</>}</td>
-                      <td className="hint">{r.par}</td></tr>
-                  ))}</tbody></table></div>
+                  <div className="table-scroll"><table className="tbl"><tbody>{p.releves.map((r, i) => {
+                    const v = r.correction ? r.correction.valeur : r.valeur;
+                    const conforme = v === null ? true : v <= r.t_max;
+                    return (
+                      <tr key={i} className={r.correction ? "corrigee" : ""}><td className="num hint">{heure(r.at)}</td><td><b>{r.enceinte}</b></td>
+                        <td className={`num ${conforme ? "" : "t-bad"}`}>{r.correction ? <><s>{deg(r.valeur)}</s> <b>{v === null ? "annulé" : deg(v)}</b></> : <b>{deg(r.valeur)}</b>}</td>
+                        <td>{conforme ? <span className="hint">max {deg(r.t_max)}</span> : <><span className="pill bad">max {deg(r.t_max)}</span>{r.action && <><br /><span className="hint">{r.action}</span></>}</>}
+                          {r.correction && <><br /><Corr c={r.correction} /></>}</td>
+                        <td className="hint">{r.par}</td>
+                        <td className="ecran-seul"><button className="lien" onClick={() => setACorriger({ table: "releves", id: r.id, libelle: `${r.enceinte} · ${deg(r.valeur)} à ${heure(r.at)}`, unite: "°C", bornes: bornesReleve(r.t_max) })}>Corriger</button></td></tr>
+                    );
+                  })}</tbody></table></div>
                 )}
               </section>
               <section className="s3-bloc" aria-label="Huile">
                 <h2>Huile</h2>
                 {!p.huiles.length ? <p className="hint">Aucune mesure ce jour.</p> : (
                   <div className="s3-friteuses">{p.huiles.map((h, i) => {
-                    const v = h.polaires, cls = h.non_utilisee ? "none" : v === null ? "none" : v >= 25 ? "bad" : v >= 20 ? "warn" : "ok";
+                    const v = h.correction ? h.correction.valeur : h.polaires, cls = h.non_utilisee ? "none" : v === null ? "none" : v >= 25 ? "bad" : v >= 20 ? "warn" : "ok";
                     return (
                       <div key={i} className="s3-friteuse">
                         <div className="s3-friteuse-tete"><b>{h.friteuse}</b><b className={cls === "bad" || cls === "warn" ? `t-${cls}` : ""}>{h.non_utilisee ? "—" : v === null ? "—" : `${v.toLocaleString("fr-FR")} %`}</b></div>
                         <div className="s3-jauge"><span className={cls} style={{ width: `${Math.min(100, ((v ?? 0) / 25) * 100)}%` }} /></div>
                         <div className="hint">{h.non_utilisee ? "non utilisée" : [h.filtrage && "filtrée", h.changement && "huile changée"].filter(Boolean).join(" · ") || "mesurée"} · {heure(h.at)} · {h.par}</div>
+                        {h.correction && <div><s className="hint">{h.polaires === null ? "—" : `${h.polaires.toLocaleString("fr-FR")} %`}</s> <Corr c={h.correction} /></div>}
+                        {!h.non_utilisee && <button className="lien ecran-seul" onClick={() => setACorriger({ table: "huiles", id: h.id, libelle: `${h.friteuse} · ${h.polaires ?? "—"} % à ${heure(h.at)}`, unite: "%", bornes: BORNES_HUILE })}>Corriger</button>}
                       </div>
                     );
                   })}</div>
@@ -267,6 +277,8 @@ function Fiche({ api, etat, anomalies, onChange, maintenant }: { api: Api; etat:
                       <span className={`pill ${l.range_at ? "none" : "warn"}`}>{l.range_at ? `rangée ${heure(l.range_at)}` : "rangement non validé"}</span>
                     </div>
                     {!l.conforme && <div className="hint">{(l.motifs ?? []).join(", ")} · {l.action}</div>}
+                    {l.correction && <Corr c={l.correction} />}
+                    <button className="lien ecran-seul" onClick={() => setACorriger({ table: "livraisons", id: l.id, libelle: `${l.fournisseur} à ${heure(l.at)}`, unite: null, bornes: null })}>Corriger</button>
                   </div>
                 </div>
               ))}</div>
@@ -298,6 +310,7 @@ function Fiche({ api, etat, anomalies, onChange, maintenant }: { api: Api; etat:
       )}
 
       {hist.length > 0 && <Tendance hist={hist} />}
+      {aCorriger && <FormCorrection api={api} cible={aCorriger} onFermer={() => setACorriger(null)} onFait={() => { setACorriger(null); setRev((x) => x + 1); onChange(); }} />}
 
       {photo && (
         <div className="visionneuse" onClick={() => setPhoto(null)} role="dialog" aria-label="Photo">
@@ -398,5 +411,54 @@ function AnomaliesGroupe({ api, liste, onChange, onOuvrir }: { api: Api; liste: 
       {!vues.length && <p className="hint">Rien ici.</p>}
       <div className="cartes">{vues.map((a) => <CarteAnomalie key={a.id} a={a} avecResto enCours={enCours === a.id} agir={agir} onOuvrir={() => onOuvrir(a.site_id)} />)}</div>
     </main>
+  );
+}
+
+/* ---------- Rattrapage : correction d'une saisie par le siège ---------- */
+
+type ACorriger = { table: TableCorrigeable; id: string; libelle: string; unite: string | null; bornes: Bornes | null };
+
+function Corr({ c }: { c: Correction }) {
+  return <span className="corr">Corrigé par {c.par} le {quand(c.at)} : « {c.motif} »{c.valeur === null ? " · saisie annulée" : ""}</span>;
+}
+
+const MOTIFS = ["Erreur de saisie (faute de frappe)", "Signe moins oublié", "Mauvaise enceinte ou friteuse", "Saisie en double"];
+
+function FormCorrection({ api, cible, onFermer, onFait }: { api: Api; cible: ACorriger; onFermer: () => void; onFait: () => void }) {
+  const [motif, setMotif] = useState("");
+  const [valeur, setValeur] = useState("");
+  const [envoi, setEnvoi] = useState(false);
+  const [erreur, setErreur] = useState<string | null>(null);
+  const v = valeur.trim() === "" ? null : Number(valeur.replace(",", "."));
+  const valeurKo = v !== null && (Number.isNaN(v) || (cible.bornes !== null && !dansBornes(v, cible.bornes)));
+  const possible = motif.trim().length >= 5 && !valeurKo && !envoi;
+  async function valider() {
+    setEnvoi(true); setErreur(null);
+    try { await api.siegeCorriger(cible.table, cible.id, motif.trim(), cible.unite ? v : null); onFait(); }
+    catch (e) { setErreur((e as Error).message); setEnvoi(false); }
+  }
+  return (
+    <div id="sheet" className="open" role="dialog" aria-modal="true" aria-label="Corriger une saisie" onClick={(e) => e.target === e.currentTarget && onFermer()}>
+      <div className="pad correction">
+        <h3>Corriger une saisie</h3>
+        <p><b>{cible.libelle}</b></p>
+        <p className="hint">La saisie d'origine reste visible, barrée. Votre correction est ajoutée avec votre nom, la date et le motif.</p>
+        <label className="champ-bloc">Motif (obligatoire)
+          <span className="opts">{MOTIFS.map((m) => <button key={m} type="button" className={`opt ${motif === m ? "sel" : ""}`} onClick={() => setMotif(m)}>{m}</button>)}</span>
+          <input className="champ" value={motif} onChange={(e) => setMotif(e.target.value)} placeholder="Ou écrivez le motif" />
+        </label>
+        {cible.unite && (
+          <label className="champ-bloc">Bonne valeur ({cible.unite}), si elle est connue
+            <input className="champ" inputMode="decimal" value={valeur} onChange={(e) => setValeur(e.target.value)} placeholder="Vide = saisie annulée" />
+            {valeurKo && <span className="t-bad">{cible.bornes?.message ?? "Valeur invalide."}</span>}
+          </label>
+        )}
+        {erreur && <p className="pill bad">{erreur}</p>}
+        <div className="carte-actions">
+          <button className="opt" onClick={onFermer}>Annuler</button>
+          <button className="s3-verifier" disabled={!possible} onClick={valider}>{envoi ? "Enregistrement…" : "Enregistrer la correction"}</button>
+        </div>
+      </div>
+    </div>
   );
 }

@@ -1,5 +1,5 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
-import type { Anomalie, AnomalieSiege, Api, EtatRestaurant, JourHistorique, Preuves, EtatFriteuse, Fournisseur, FournisseurNC, LigneSiege, SeuilsHuile, Site, Tache } from "../types";
+import type { Anomalie, AnomalieSiege, Api, Correction, EtatRestaurant, JourHistorique, Preuves, EtatFriteuse, Fournisseur, FournisseurNC, LigneSiege, SeuilsHuile, Site, Tache } from "../types";
 import { ErreurDefinitive, type Operation } from "../operations";
 
 /**
@@ -36,7 +36,9 @@ export function supabaseApi(url: string, cleAnon: string): Api {
   /** Insertion rejouable : une ligne déjà reçue (même id) est ignorée. */
   async function inserer(table: string, lignes: Record<string, unknown>[]) {
     if (!lignes.length) return;
-    verifier(await sb.from(table).upsert(lignes, { onConflict: "id", ignoreDuplicates: true }));
+    // defaultToNull: false : une clé absente d'une ligne prend la valeur par défaut de la colonne, pas NULL
+    // (sinon, dans un envoi groupé, une ligne sans « non_utilisee » était refusée).
+    verifier(await sb.from(table).upsert(lignes, { onConflict: "id", ignoreDuplicates: true, defaultToNull: false }));
   }
 
   return {
@@ -87,12 +89,16 @@ export function supabaseApi(url: string, cleAnon: string): Api {
     async preuvesJour(siteId, jour) {
       const p = ok(await sb.rpc("preuves_jour", { p_site: siteId, p_jour: jour })) as Preuves;
       const n = (v: unknown) => (v === null || v === undefined ? null : Number(v));
+      const corr = (c: Correction | null | undefined) => (c ? { ...c, valeur: n(c.valeur) } : null);
       return {
         ...p,
-        releves: p.releves.map((r) => ({ ...r, valeur: Number(r.valeur), t_max: Number(r.t_max) })),
-        huiles: p.huiles.map((h) => ({ ...h, polaires: n(h.polaires) })),
-        livraisons: p.livraisons.map((l) => ({ ...l, t_camion: Number(l.t_camion), t_frais: n(l.t_frais), t_surgele: n(l.t_surgele) })),
+        releves: p.releves.map((r) => ({ ...r, valeur: Number(r.valeur), t_max: Number(r.t_max), correction: corr(r.correction) })),
+        huiles: p.huiles.map((h) => ({ ...h, polaires: n(h.polaires), correction: corr(h.correction) })),
+        livraisons: p.livraisons.map((l) => ({ ...l, t_camion: Number(l.t_camion), t_frais: n(l.t_frais), t_surgele: n(l.t_surgele), correction: corr(l.correction) })),
       };
+    },
+    async siegeCorriger(table, id, motif, valeur) {
+      verifier(await sb.rpc("siege_corriger", { p_table: table, p_id: id, p_motif: motif, p_valeur: valeur }));
     },
     async urlPhoto(chemin) {
       const { data, error } = await sb.storage.from("photos").createSignedUrl(chemin, 3600);
@@ -121,7 +127,7 @@ export function supabaseApi(url: string, cleAnon: string): Api {
           if (op.tache_id) verifier(await sb.rpc("terminer_tache", { p_tache: op.tache_id, p_profil: op.par, p_at_client: op.at_client }));
           break;
         case "huile":
-          await inserer("huiles", op.lignes.map((l) => ({ ...l, ...commun, tache_id: op.tache_id ?? null })));
+          await inserer("huiles", op.lignes.map((l) => ({ ...l, non_utilisee: !!l.non_utilisee, litres: l.litres ?? null, ...commun, tache_id: op.tache_id ?? null })));
           if (op.tache_id) verifier(await sb.rpc("terminer_tache", { p_tache: op.tache_id, p_profil: op.par, p_at_client: op.at_client }));
           break;
         case "terminer_tache":

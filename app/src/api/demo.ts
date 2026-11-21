@@ -1,4 +1,4 @@
-import type { Api, Anomalie, AnomalieSiege, EtatRestaurant, EtatFriteuse, Preuves, Profil, Tache } from "../types";
+import type { Api, Anomalie, AnomalieSiege, Correction, EtatRestaurant, EtatFriteuse, Preuves, Profil, Tache } from "../types";
 import { ErreurDefinitive, type Operation } from "../operations";
 import { transitionPermise } from "../logique";
 
@@ -38,6 +38,8 @@ const etatHuile: EtatFriteuse[] = [
   { friteuse_id: "f3", jours_utilisation: 14, dernier_changement: iso(t0 - 16 * JOUR), aujourd_hui_at: null, aujourd_hui_polaires: null, aujourd_hui_non_utilisee: null },
   { friteuse_id: "f4", jours_utilisation: 2, dernier_changement: iso(t0 - 3 * JOUR), aujourd_hui_at: null, aujourd_hui_polaires: null, aujourd_hui_non_utilisee: null },
 ];
+/** Corrections faites par le siège pendant la démo (par id de saisie). */
+const correctionsDemo = new Map<string, Correction>();
 /** Anomalies du groupe vues par le siège (démo). */
 const anomaliesGroupe: AnomalieSiege[] = [
   { id: "g1", site_id: "s3", restaurant: "DALLAS", titre: "Chambre froide négative à −12 °C (max −18 °C) · denrées déplacées", categorie: "Température", gravite: "critique", statut: "ouverte", cree_at: iso(t0 - 3 * 60 * MIN), cree_par: "Karim", traitee_at: null, traitee_par: null, traitee_commentaire: null, verifiee_at: null, verifiee_par: null, photo: null },
@@ -122,18 +124,18 @@ export const demoApi: Api = {
         { titre: "Relevé températures du soir", echeance: h("18:00"), faite_at: null, par: null },
       ],
       releves: [
-        { enceinte: "Chambre froide positive", valeur: 2.8, t_max: 3, conforme: true, action: null, par: "Karim", at: h("10:42") },
-        { enceinte: "Chambre froide négative", valeur: -12, t_max: -18, conforme: false, action: "Denrées déplacées dans le congélateur du poste froid", par: "Karim", at: h("10:42") },
-        { enceinte: "Frigo poste chaud", valeur: 3.5, t_max: 4, conforme: true, action: null, par: "Karim", at: h("10:42") },
+        { id: "p1", correction: correctionsDemo.get("p1") ?? null, enceinte: "Chambre froide positive", valeur: 2.8, t_max: 3, conforme: true, action: null, par: "Karim", at: h("10:42") },
+        { id: "p2", correction: correctionsDemo.get("p2") ?? null, enceinte: "Chambre froide négative", valeur: -12, t_max: -18, conforme: false, action: "Denrées déplacées dans le congélateur du poste froid", par: "Karim", at: h("10:42") },
+        { id: "p3", correction: correctionsDemo.get("p3") ?? null, enceinte: "Frigo poste chaud", valeur: 3.5, t_max: 4, conforme: true, action: null, par: "Karim", at: h("10:42") },
       ],
       huiles: [
-        { friteuse: "Friteuse 1", polaires: 14, filtrage: true, changement: false, non_utilisee: false, par: "Julie", at: h("11:51") },
-        { friteuse: "Friteuse 2", polaires: 22, filtrage: false, changement: true, non_utilisee: false, par: "Julie", at: h("11:51") },
-        { friteuse: "Friteuse 3", polaires: null, filtrage: false, changement: false, non_utilisee: true, par: "Julie", at: h("11:52") },
+        { id: "p4", correction: correctionsDemo.get("p4") ?? null, friteuse: "Friteuse 1", polaires: 14, filtrage: true, changement: false, non_utilisee: false, par: "Julie", at: h("11:51") },
+        { id: "p5", correction: correctionsDemo.get("p5") ?? null, friteuse: "Friteuse 2", polaires: 22, filtrage: false, changement: true, non_utilisee: false, par: "Julie", at: h("11:51") },
+        { id: "p6", correction: correctionsDemo.get("p6") ?? null, friteuse: "Friteuse 3", polaires: null, filtrage: false, changement: false, non_utilisee: true, par: "Julie", at: h("11:52") },
       ],
       livraisons: [
-        { fournisseur: "Transgourmet", t_camion: 2.5, t_frais: 3.1, t_surgele: -19, conforme: true, motifs: null, action: null, viande: true, origine_ok: true, photo_bl: "demo/bl1.webp", photo_nc: null, range_at: h("08:20"), par: "Mehdi", at: h("07:55") },
-        { fournisseur: "Pomona", t_camion: 8.6, t_frais: 7.2, t_surgele: null, conforme: false, motifs: ["Température"], action: "Produits refusés", viande: false, origine_ok: null, photo_bl: "demo/bl2.webp", photo_nc: null, range_at: null, par: "Mehdi", at: h("09:10") },
+        { id: "p7", correction: correctionsDemo.get("p7") ?? null, fournisseur: "Transgourmet", t_camion: 2.5, t_frais: 3.1, t_surgele: -19, conforme: true, motifs: null, action: null, viande: true, origine_ok: true, photo_bl: "demo/bl1.webp", photo_nc: null, range_at: h("08:20"), par: "Mehdi", at: h("07:55") },
+        { id: "p8", correction: correctionsDemo.get("p8") ?? null, fournisseur: "Pomona", t_camion: 8.6, t_frais: 7.2, t_surgele: null, conforme: false, motifs: ["Température"], action: "Produits refusés", viande: false, origine_ok: null, photo_bl: "demo/bl2.webp", photo_nc: null, range_at: null, par: "Mehdi", at: h("09:10") },
       ],
       produits: [
         { famille: "Viandes", service: "midi", photo: "demo/p1.webp", par: "Julie", at: h("11:20") },
@@ -142,6 +144,10 @@ export const demoApi: Api = {
       anomalies: [{ titre: "Chambre froide négative à −12 °C", gravite: "critique", statut: "ouverte", at: h("10:42") }],
     };
     return attendre(p);
+  },
+  siegeCorriger: async (_table, id, motif, valeur) => {
+    if (motif.trim().length < 5) throw new Error("Motif obligatoire (5 caractères au moins)");
+    correctionsDemo.set(id, { motif: motif.trim(), valeur, par: "Siège (démo)", at: new Date().toISOString() });
   },
   urlPhoto: async (chemin) => {
     const b = recuDemo.photos.get(chemin);

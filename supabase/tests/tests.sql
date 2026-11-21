@@ -201,6 +201,23 @@ do $$ begin
   exception when invalid_parameter_value then null; end;
 end $$;
 
+-- rattrapage siège : correction tracée d'une saisie, sans rien effacer
+update auth.claims set jwt = '{"sub":"00000000-0000-0000-0000-0000000000c1","app_metadata":{"role":"siege"}}';
+do $$ declare r uuid; j jsonb; n int; begin
+  select id into r from releves where site_id = '00000000-0000-0000-0000-000000000001' order by at limit 1;
+  begin perform siege_corriger('releves', r, 'non'); raise exception 'ÉCHEC : motif trop court accepté';
+  exception when invalid_parameter_value then null; end;
+  begin perform siege_corriger('releves', r, 'Erreur de saisie', -50); raise exception 'ÉCHEC : valeur corrigée impossible acceptée';
+  exception when invalid_parameter_value then null; end;
+  perform siege_corriger('releves', r, 'Signe oublié à la saisie', 3.5);
+  select count(*) into n from releves where id = r;
+  assert n = 1, 'la saisie d''origine est conservée';
+  j := preuves_jour('00000000-0000-0000-0000-000000000001', (now() at time zone 'Europe/Paris')::date);
+  assert (select x->'correction'->>'valeur' from jsonb_array_elements(j->'releves') x where x->>'id' = r::text) = '3.5', format('correction visible dans les preuves : %s', j->'releves');
+  assert (select x->'correction'->>'par' from jsonb_array_elements(j->'releves') x where x->>'id' = r::text) = 'Siège (direction)', 'auteur de la correction';
+end $$;
+update auth.claims set jwt = '{"app_metadata":{"role":"siege"}}';
+
 -- règles d'accès : une tablette ne voit que son site
 create role tablette in role authenticated; grant usage on schema public, auth to tablette; grant select, insert, update on all tables in schema public to tablette;
 grant select on auth.claims to tablette; grant execute on all functions in schema auth to tablette;
@@ -267,6 +284,10 @@ do $$ declare i int; begin
   begin
     perform * from tableau_siege_v2(7);
     raise exception 'ÉCHEC : une tablette lit le tableau v2 du siège';
+  exception when insufficient_privilege then null; end;
+  begin
+    perform siege_corriger('releves', (select id from releves limit 1), 'Tentative tablette');
+    raise exception 'ÉCHEC : une tablette corrige une saisie';
   exception when insufficient_privilege then null; end;
   begin
     perform * from etat_restaurants();

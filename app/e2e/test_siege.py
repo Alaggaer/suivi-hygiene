@@ -55,3 +55,22 @@ def test_telephone(page):
     page.click(".s3-carte >> nth=0")
     page.wait_for_selector("h2:has-text('La journée')")
     assert page.evaluate("document.documentElement.scrollWidth") <= 392
+
+def test_rattrapage_par_le_siege(page):
+    ouvrir(page)
+    page.click(".s3-carte:has-text('DALLAS')")
+    page.wait_for_selector("h2:has-text('Températures')")
+    ligne = page.locator("tr:has-text('Chambre froide négative')")
+    ligne.locator("text=Corriger").click()
+    page.wait_for_selector("text=Corriger une saisie")
+    bouton = page.locator("text=Enregistrer la correction")
+    assert bouton.is_disabled(), "motif obligatoire"
+    page.click("text=Erreur de saisie (faute de frappe)")
+    page.fill("input[placeholder='Vide = saisie annulée']", "25")
+    assert page.locator(".correction .t-bad").count() == 1 and bouton.is_disabled(), "valeur impossible refusée"
+    page.fill("input[placeholder='Vide = saisie annulée']", "-21")
+    bouton.click()
+    page.wait_for_selector("tr.corrigee:has-text('Chambre froide négative')")
+    t = page.locator("tr.corrigee").inner_text()
+    assert "−12" in t or "-12" in t, "valeur d'origine gardée (barrée)"
+    assert "Corrigé par Siège (démo)" in t and "Erreur de saisie" in t

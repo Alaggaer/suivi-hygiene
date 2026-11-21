@@ -58,12 +58,15 @@ export interface AnomalieSiege {
   traitee_at: string | null; traitee_par: string | null; traitee_commentaire: string | null;
   verifiee_at: string | null; verifiee_par: string | null; photo: string | null;
 }
+/** Rattrapage par le siège : la saisie d'origine reste, la correction s'y ajoute (valeur null = saisie annulée). */
+export interface Correction { motif: string; valeur: number | null; par: string; at: string }
+export type TableCorrigeable = "releves" | "huiles" | "livraisons";
 /** Preuves d'un restaurant pour un jour (ce qu'on montre lors d'un contrôle). */
 export interface Preuves {
   taches: { titre: string; echeance: string; faite_at: string | null; par: string | null }[];
-  releves: { enceinte: string; valeur: number; t_max: number; conforme: boolean; action: string | null; par: string; at: string }[];
-  huiles: { friteuse: string; polaires: number | null; filtrage: boolean; changement: boolean; non_utilisee: boolean; par: string; at: string }[];
-  livraisons: { fournisseur: string; t_camion: number; t_frais: number | null; t_surgele: number | null; conforme: boolean; motifs: string[] | null;
+  releves: { id: string; correction: Correction | null; enceinte: string; valeur: number; t_max: number; conforme: boolean; action: string | null; par: string; at: string }[];
+  huiles: { id: string; correction: Correction | null; friteuse: string; polaires: number | null; filtrage: boolean; changement: boolean; non_utilisee: boolean; par: string; at: string }[];
+  livraisons: { id: string; correction: Correction | null; fournisseur: string; t_camion: number; t_frais: number | null; t_surgele: number | null; conforme: boolean; motifs: string[] | null;
     action: string | null; viande: boolean; origine_ok: boolean | null; photo_bl: string; photo_nc: string | null; range_at: string | null; par: string; at: string }[];
   produits: { famille: string; service: string; photo: string; par: string; at: string }[];
   anomalies: { titre: string; gravite: Gravite; statut: Anomalie["statut"]; at: string }[];
@@ -95,6 +98,8 @@ export interface Api {
   /** Le siège traite ou vérifie une anomalie (en ligne uniquement, sous son propre profil). */
   siegeChangerStatut(id: string, statut: "traitee" | "verifiee", commentaire?: string): Promise<void>;
   preuvesJour(siteId: string, jour: string): Promise<Preuves>;
+  /** Le siège corrige une saisie erronée : motif obligatoire, valeur corrigée facultative (absente = saisie annulée). */
+  siegeCorriger(table: TableCorrigeable, id: string, motif: string, valeur: number | null): Promise<void>;
   /** Lien temporaire (1 h) vers une photo du stockage privé. */
   urlPhoto(chemin: string): Promise<string>;
   /** Écritures : appelées uniquement par la file d'envoi, et rejouables sans doublon. */
