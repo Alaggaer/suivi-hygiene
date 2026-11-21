@@ -338,3 +338,23 @@ tr.corrigee td{background:#fbf7ec}
 .liv-dec span{font-size:14px;color:var(--muted)}
 .liv-dec.sel{border:3px solid var(--ink);background:#eef4fc}
 @media (max-width:760px){ .liv-temps,.liv-decisions{grid-template-columns:1fr} .liv-ligne{grid-template-columns:1fr} }
+
+/* ---------- Stocks morts ---------- */
+.sm-titre{font-size:20px;margin:14px 0 6px}
+.sm-carte{display:flex;flex-direction:column;gap:6px;text-align:left;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px 16px;margin-bottom:10px;width:100%}
+.sm-carte.a-faire{border:2px solid var(--bad)}
+.sm-carte:disabled{opacity:.75}
+.sm-tete{display:flex;justify-content:space-between;align-items:center;gap:10px}
+.sm-tete b{font-size:19px}
+.sm-consigne{background:#fff6e0;border-radius:10px;padding:8px 12px;font-size:15px;color:#6a4a00}
+.sm-form{display:flex;flex-direction:column;gap:14px}
+.sm-declarer{display:flex;flex-direction:column;gap:12px}
+.sm-champs{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px}
+.sm-large{grid-column:1 / -1}
+.sm-produit{display:flex;flex-direction:column;gap:10px}
+.sm-produit.clos{opacity:.65}
+.sm-produit h2{margin:0}
+.sm-compte{display:flex;gap:6px;flex-wrap:wrap}
+.sm-barre{display:flex;height:10px;border-radius:5px;background:#f3c7c2;overflow:hidden}
+.sm-barre span.ok{background:var(--ok)} .sm-barre span.warn{background:#d99a2b}
+.act b{padding-right:28px}

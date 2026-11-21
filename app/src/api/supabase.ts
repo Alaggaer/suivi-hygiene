@@ -1,5 +1,5 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
-import type { Anomalie, AnomalieSiege, Api, Correction, LivraisonJour, Enceinte, Friteuse, EtatRestaurant, JourHistorique, Preuves, EtatFriteuse, Fournisseur, FournisseurNC, LigneSiege, SeuilsHuile, Site, Tache } from "../types";
+import type { Anomalie, AnomalieSiege, Api, Correction, LivraisonJour, StockMort, StockMortSiege, Enceinte, Friteuse, EtatRestaurant, JourHistorique, Preuves, EtatFriteuse, Fournisseur, FournisseurNC, LigneSiege, SeuilsHuile, Site, Tache } from "../types";
 import { ErreurDefinitive, type Operation } from "../operations";
 
 /**
@@ -125,6 +125,12 @@ export function supabaseApi(url: string, cleAnon: string): Api {
       return (ok(await sb.from("fournisseurs").select("id, nom, viande, jours_livraison, produits").eq("actif", true).order("nom")) as (Fournisseur & { jours_livraison: number[] | null })[])
         .map((f) => ({ id: f.id, nom: f.nom, viande: f.viande, jours: f.jours_livraison, produits: f.produits }));
     },
+    async stocksMortsDuSite() { return ok(await sb.rpc("stocks_morts_du_site")) as StockMort[]; },
+    async stocksMortsSiege() { return ok(await sb.rpc("stocks_morts_siege")) as StockMortSiege[]; },
+    async siegeRetirerProduit(nom, fournisseurId, consigne) {
+      verifier(await sb.rpc("siege_retirer_produit", { p_nom: nom, p_fournisseur: fournisseurId, p_consigne: consigne }));
+    },
+    async siegeCloreProduit(id) { verifier(await sb.rpc("siege_clore_produit", { p_id: id })); },
     async livraisonsDuJour(): Promise<LivraisonJour[]> {
       const debut = new Date(); debut.setHours(0, 0, 0, 0);
       const l = ok(await sb.from("livraisons").select("id, at, t_camion, conforme, action, produits_refuses, photos_bl_suite, range_at, fournisseurs(nom)")
@@ -186,6 +192,10 @@ export function supabaseApi(url: string, cleAnon: string): Api {
           verifier(await sb.rpc("changer_statut_anomalie", {
             p_anomalie: op.anomalie_id, p_statut: op.statut, p_profil: op.par, p_commentaire: op.commentaire ?? null, p_at_client: op.at_client,
           }));
+          break;
+        case "stock_mort":
+          await inserer("inventaires_stock", [{ id: op.id, ...commun, produit_id: op.produit_id, reste: op.reste, quantite: op.quantite ?? null,
+            dlc: op.dlc ?? null, photo: op.photo ?? null, decision: op.decision ?? null, transfert_vers: op.transfert_vers ?? null }]);
           break;
         case "utilisation":
           await inserer("utilisations", [{ id: op.id, ...commun, photo: op.photo, famille: op.famille, service: op.service }]);

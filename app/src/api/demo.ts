@@ -1,4 +1,4 @@
-import type { Api, Anomalie, AnomalieSiege, Correction, LivraisonJour, Rattrapage, EtatRestaurant, EtatFriteuse, Preuves, Profil, Tache } from "../types";
+import type { Api, Anomalie, AnomalieSiege, Correction, DecisionStock, EtatStock, LivraisonJour, Rattrapage, EtatRestaurant, EtatFriteuse, Preuves, Profil, Tache } from "../types";
 import { ErreurDefinitive, type Operation } from "../operations";
 import { transitionPermise } from "../logique";
 
@@ -38,6 +38,14 @@ const etatHuile: EtatFriteuse[] = [
   { friteuse_id: "f3", jours_utilisation: 14, dernier_changement: iso(t0 - 16 * JOUR), aujourd_hui_at: null, aujourd_hui_polaires: null, aujourd_hui_non_utilisee: null },
   { friteuse_id: "f4", jours_utilisation: 2, dernier_changement: iso(t0 - 3 * JOUR), aujourd_hui_at: null, aujourd_hui_polaires: null, aujourd_hui_non_utilisee: null },
 ];
+/** Stocks morts de la démo : produits retirés de la carte, et réponses par restaurant (la tablette de démo = DALLAS, s3). */
+type InvDemo = { site_id: string; reste: boolean; quantite: string | null; dlc: string | null; photo: string | null; decision: DecisionStock | null; transfert_vers: string | null; par: string; at: string };
+const produitsDemo: { id: string; nom: string; fournisseur: string | null; consigne: string | null; sortie_le: string; actif: boolean; inv: InvDemo[] }[] = [
+  { id: "pr1", nom: "Sauce cheddar ancienne recette", fournisseur: "SYSCO", consigne: "À écouler en plat du jour, sinon à jeter avant le 30/11", sortie_le: iso(t0 - 5 * 24 * 60 * MIN).slice(0, 10), actif: true,
+    inv: [{ site_id: "s0", reste: true, quantite: "2 bidons", dlc: "2026-11-28", photo: "demo/s1.webp", decision: "a_ecouler", transfert_vers: null, par: "Hugo", at: iso(t0 - 3 * 24 * 60 * MIN) },
+          { site_id: "s1", reste: false, quantite: null, dlc: null, photo: null, decision: null, transfert_vers: null, par: "Léa", at: iso(t0 - 4 * 24 * 60 * MIN) }] },
+];
+const etatInv = (i?: InvDemo): EtatStock => (!i ? "a_verifier" : !i.reste || i.decision === "jete" || i.decision === "transfere" ? "solde" : "a_ecouler");
 /** Livraisons reçues pendant la démo. */
 const livraisonsDemo: LivraisonJour[] = [];
 /** Saisies oubliées ajoutées par le siège pendant la démo. */
@@ -86,6 +94,27 @@ export const demoApi: Api = {
     ]);
   },
   livraisonsDuJour: () => attendre(livraisonsDemo.map((l) => ({ ...l }))),
+  stocksMortsDuSite: () => attendre(produitsDemo.filter((p) => p.actif).map((p) => {
+    const i = p.inv.filter((x) => x.site_id === "s3").slice(-1)[0];
+    const etat = etatInv(i);
+    return { produit_id: p.id, nom: p.nom, fournisseur: p.fournisseur, consigne: p.consigne, sortie_le: p.sortie_le, etat,
+      quantite: i?.quantite ?? null, dlc: i?.dlc ?? null, verifie_at: i?.at ?? null,
+      a_faire: !i || (etat === "a_ecouler" && (Date.now() - Date.parse(i.at) > 7 * 24 * 60 * MIN || (!!i.dlc && i.dlc <= new Date().toISOString().slice(0, 10)))) };
+  })),
+  stocksMortsSiege: () => attendre(produitsDemo.map((p) => ({
+    id: p.id, nom: p.nom, fournisseur: p.fournisseur, consigne: p.consigne, sortie_le: p.sortie_le, actif: p.actif,
+    sites: SITES_DEMO.map(([nom], k) => {
+      const i = p.inv.filter((x) => x.site_id === `s${k}`).slice(-1)[0];
+      return { site_id: `s${k}`, restaurant: nom, etat: etatInv(i), quantite: i?.quantite ?? null, dlc: i?.dlc ?? null, photo: i?.photo ?? null,
+        decision: i?.decision ?? null, transfert_vers: i?.transfert_vers ?? null, par: i?.par ?? null, at: i?.at ?? null };
+    }),
+  }))),
+  siegeRetirerProduit: async (nom, fournisseurId, consigne) => {
+    if (nom.trim().length < 2) throw new Error("Nom du produit obligatoire");
+    produitsDemo.unshift({ id: `pr${produitsDemo.length + 1}`, nom: nom.trim(), fournisseur: fournisseurId ? "Fournisseur" : null,
+      consigne: consigne.trim() || null, sortie_le: new Date().toISOString().slice(0, 10), actif: true, inv: [] });
+  },
+  siegeCloreProduit: async (id) => { const p = produitsDemo.find((x) => x.id === id); if (p) p.actif = false; },
   anomaliesSiege: () => attendre(anomaliesGroupe.map((a) => ({ ...a }))),
   etatRestaurants: async () => {
     // État du jour d'exemple, cohérent avec les anomalies du groupe ci-dessus.
@@ -256,6 +285,12 @@ export const demoApi: Api = {
         }
         break;
       case "utilisation": if (nouveau(op.id)) recuDemo.utilisations++; break;
+      case "stock_mort": {
+        const p = produitsDemo.find((x) => x.id === op.produit_id);
+        if (p && nouveau(op.id)) p.inv.push({ site_id: "s3", reste: op.reste, quantite: op.quantite ?? null, dlc: op.dlc ?? null, photo: op.photo ?? null,
+          decision: op.decision ?? null, transfert_vers: op.transfert_vers ?? null, par: op.par_nom ?? "", at: op.at_client });
+        break;
+      }
       case "livraison_rangee": {
         const l = livraisonsDemo.find((x) => x.id === op.livraison_id);
         if (l && !l.range_at) l.range_at = op.at_client;

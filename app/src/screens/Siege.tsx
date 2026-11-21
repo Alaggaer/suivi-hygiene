@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import type { AnomalieSiege, Api, Correction, EtatRestaurant, JourHistorique, Preuves, TableCorrigeable } from "../types";
+import type { AnomalieSiege, Api, Correction, Fournisseur, StockMortSiege, EtatRestaurant, JourHistorique, Preuves, TableCorrigeable } from "../types";
 import { BORNES_HUILE, bornesReleve, dansBornes, depuis, indicateursRestaurant, trierRestaurants, type Bornes, type Indicateur, type NiveauResto } from "../logique";
 
 /**
@@ -8,7 +8,7 @@ import { BORNES_HUILE, bornesReleve, dansBornes, depuis, indicateursRestaurant, 
  * - fiche restaurant : à traiter, la journée, températures, huile, livraisons, traçabilité, 30 jours ; imprimable en PDF ;
  * - anomalies à vérifier de tout le groupe.
  */
-type Vue = { nom: "accueil" } | { nom: "resto"; id: string } | { nom: "anomalies" };
+type Vue = { nom: "accueil" } | { nom: "resto"; id: string } | { nom: "anomalies" } | { nom: "stocks" };
 
 const NIV: Record<NiveauResto, { libelle: string; cls: string }> = {
   rouge: { libelle: "À surveiller", cls: "bad" }, orange: { libelle: "Attention", cls: "warn" }, vert: { libelle: "RAS", cls: "ok" },
@@ -54,6 +54,7 @@ export function TableauSiege({ api }: { api: Api }) {
       <div className="s3-barre">
         {vue.nom !== "accueil" && <button className="s3-retour" onClick={() => setVue({ nom: "accueil" })}>← Tous les restaurants</button>}
         <span className="s3-date">{new Date().toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long", timeZone: "Europe/Paris" })}</span>
+        <button className="s3-retour" onClick={() => setVue({ nom: "stocks" })}>Stocks morts</button>
         <button className={`s3-averifier ${aVerifier ? "" : "zero"}`} onClick={() => setVue({ nom: "anomalies" })}>
           {aVerifier ? `${aVerifier} à vérifier` : "Anomalies"}
         </button>
@@ -63,6 +64,7 @@ export function TableauSiege({ api }: { api: Api }) {
         <Fiche api={api} etat={tries.find((e) => e.site_id === vue.id)!} anomalies={anomalies.filter((a) => a.site_id === vue.id)}
           onChange={charger} maintenant={maintenant} />
       )}
+      {vue.nom === "stocks" && <StocksMortsSiege api={api} onOuvrir={(id) => setVue({ nom: "resto", id })} />}
       {vue.nom === "anomalies" && <AnomaliesGroupe api={api} liste={anomalies} onChange={charger} onOuvrir={(id) => setVue({ nom: "resto", id })} />}
     </div>
   );
@@ -568,5 +570,99 @@ function FormRattrapage({ api, siteId, type, jour, onFermer, onFait }: {
         </div>
       </div>
     </div>
+  );
+}
+
+/* ---------- Stocks morts : le siège déclare les produits sortis de la carte et suit chaque restaurant ---------- */
+
+const ETAT_STOCK = { a_verifier: ["à vérifier", "bad"], a_ecouler: ["à écouler", "warn"], solde: ["soldé", "ok"] } as const;
+const DECISION_STOCK: Record<string, string> = { jete: "jeté", transfere: "transféré", a_ecouler: "à écouler" };
+
+function StocksMortsSiege({ api, onOuvrir }: { api: Api; onOuvrir: (siteId: string) => void }) {
+  const [liste, setListe] = useState<StockMortSiege[] | null>(null);
+  const [fournisseurs, setFournisseurs] = useState<Fournisseur[]>([]);
+  const [nom, setNom] = useState(""); const [four, setFour] = useState(""); const [consigne, setConsigne] = useState("");
+  const [ouvert, setOuvert] = useState<string | null>(null);
+  const [aClore, setAClore] = useState<string | null>(null);
+  const [photo, setPhoto] = useState<string | null>(null);
+  const [envoi, setEnvoi] = useState(false);
+  const [erreur, setErreur] = useState<string | null>(null);
+  const charger = () => api.stocksMortsSiege().then((l) => { setListe(l); setErreur(null); }).catch((e) => setErreur((e as Error).message));
+  useEffect(() => { charger(); api.fournisseurs().then(setFournisseurs).catch(() => {}); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [api]);
+
+  async function declarer() {
+    setEnvoi(true); setErreur(null);
+    try { await api.siegeRetirerProduit(nom.trim(), four || null, consigne.trim()); setNom(""); setFour(""); setConsigne(""); await charger(); }
+    catch (e) { setErreur((e as Error).message); }
+    finally { setEnvoi(false); }
+  }
+  async function clore(id: string) {
+    try { await api.siegeCloreProduit(id); setAClore(null); await charger(); } catch (e) { setErreur((e as Error).message); }
+  }
+
+  return (
+    <main className="s3-main">
+      <div className="s3-titre"><h1>Stocks morts</h1><span className="hint">produits sortis de la carte, à vérifier dans chaque restaurant</span></div>
+      <section className="s3-bloc sm-declarer" aria-label="Déclarer un produit">
+        <h2>Déclarer un produit sorti de la carte</h2>
+        <div className="sm-champs">
+          <label className="champ-bloc">Produit<input className="champ" value={nom} onChange={(e) => setNom(e.target.value)} placeholder="Ex. Sauce cheddar ancienne recette" /></label>
+          <label className="champ-bloc">Fournisseur (facultatif)
+            <select className="champ" value={four} onChange={(e) => setFour(e.target.value)}>
+              <option value="">—</option>{fournisseurs.map((f) => <option key={f.id} value={f.id}>{f.nom}</option>)}
+            </select>
+          </label>
+          <label className="champ-bloc sm-large">Consigne aux restaurants (facultatif)<input className="champ" value={consigne} onChange={(e) => setConsigne(e.target.value)} placeholder="Ex. à écouler en plat du jour, sinon à jeter avant le 30/11" /></label>
+        </div>
+        <button className="s3-verifier" disabled={nom.trim().length < 2 || envoi} onClick={declarer}>{envoi ? "Envoi…" : "Envoyer à tous les restaurants"}</button>
+      </section>
+      {erreur && <p className="pill bad">{erreur}</p>}
+      {!liste && !erreur && <p className="hint">Chargement…</p>}
+      {liste && !liste.length && <p className="hint">Aucun produit déclaré.</p>}
+      {(liste ?? []).map((p) => {
+        const n = (e: string) => p.sites.filter((x) => x.etat === e).length;
+        const total = p.sites.length || 1;
+        return (
+          <section key={p.id} className={`s3-bloc sm-produit ${p.actif ? "" : "clos"}`}>
+            <div className="sm-tete">
+              <div><h2>{p.nom}</h2><span className="hint">{[p.fournisseur, `sorti le ${new Date(`${p.sortie_le}T12:00:00`).toLocaleDateString("fr-FR", { day: "numeric", month: "long" })}`, !p.actif && "clos"].filter(Boolean).join(" · ")}</span></div>
+              <div className="sm-compte">
+                <span className="pill bad">{n("a_verifier")} à vérifier</span><span className="pill warn">{n("a_ecouler")} à écouler</span><span className="pill ok">{n("solde")} soldé{n("solde") > 1 ? "s" : ""}</span>
+              </div>
+            </div>
+            {p.consigne && <p className="sm-consigne">Consigne : {p.consigne}</p>}
+            <div className="sm-barre" role="img" aria-label={`${n("solde")} soldés, ${n("a_ecouler")} à écouler, ${n("a_verifier")} à vérifier`}>
+              <span className="ok" style={{ width: `${(n("solde") / total) * 100}%` }} /><span className="warn" style={{ width: `${(n("a_ecouler") / total) * 100}%` }} />
+            </div>
+            <div className="carte-actions">
+              <button className="lien" onClick={() => setOuvert(ouvert === p.id ? null : p.id)}>{ouvert === p.id ? "Masquer le détail" : "Détail par restaurant"}</button>
+              {p.actif && (aClore === p.id
+                ? <><span className="hint">Plus aucun restaurant ne sera relancé.</span><button className="opt" onClick={() => clore(p.id)}>Confirmer la clôture</button><button className="lien" onClick={() => setAClore(null)}>Annuler</button></>
+                : <button className="lien" onClick={() => setAClore(p.id)}>Clore ce produit</button>)}
+            </div>
+            {ouvert === p.id && (
+              <div className="table-scroll"><table className="tbl"><tbody>{p.sites.map((x) => {
+                const [lib, cls] = ETAT_STOCK[x.etat];
+                return (
+                  <tr key={x.site_id}>
+                    <td><button className="lien" onClick={() => onOuvrir(x.site_id)}><b>{x.restaurant}</b></button></td>
+                    <td><span className={`pill ${cls}`}>{lib}</span></td>
+                    <td className="hint">{[x.quantite, x.dlc && `DLC ${new Date(`${x.dlc}T12:00:00`).toLocaleDateString("fr-FR", { day: "numeric", month: "short" })}`,
+                      x.decision && DECISION_STOCK[x.decision], x.transfert_vers && `vers ${x.transfert_vers}`].filter(Boolean).join(" · ")}</td>
+                    <td className="hint">{x.at ? `${x.par ?? ""} · ${quand(x.at)}` : ""}</td>
+                    <td>{x.photo && <button className="lien" onClick={async () => { try { setPhoto(await api.urlPhoto(x.photo!)); } catch { /* photo absente */ } }}>Photo</button>}</td>
+                  </tr>
+                );
+              })}</tbody></table></div>
+            )}
+          </section>
+        );
+      })}
+      {photo && (
+        <div className="visionneuse" onClick={() => setPhoto(null)} role="dialog" aria-label="Photo">
+          <img src={photo} alt="Photo" /><button className="opt">Fermer</button>
+        </div>
+      )}
+    </main>
   );
 }

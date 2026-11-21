@@ -27,6 +27,18 @@ export interface Tache {
 
 /** viande : la question de l'origine est posée ; jours : jours de livraison habituels (1 = lundi … 7 = dimanche). */
 export type ProduitLivre = "frais" | "sec" | "surgele";
+/** Stocks morts : produit sorti de la carte (déclaré par le siège), et où en est ce restaurant. */
+export type EtatStock = "a_verifier" | "a_ecouler" | "solde";
+export type DecisionStock = "jete" | "transfere" | "a_ecouler";
+export interface StockMort {
+  produit_id: string; nom: string; fournisseur: string | null; consigne: string | null; sortie_le: string;
+  etat: EtatStock; quantite: string | null; dlc: string | null; verifie_at: string | null; a_faire: boolean;
+}
+export interface StockMortSiege {
+  id: string; nom: string; fournisseur: string | null; consigne: string | null; sortie_le: string; actif: boolean;
+  sites: { site_id: string; restaurant: string; etat: EtatStock; quantite: string | null; dlc: string | null; photo: string | null;
+    decision: DecisionStock | null; transfert_vers: string | null; par: string | null; at: string | null }[];
+}
 export interface Fournisseur { id: string; nom: string; viande?: boolean; jours?: number[] | null; produits?: ProduitLivre[] | null }
 /** Livraison reçue aujourd'hui (liste de l'écran Livraisons). */
 export interface LivraisonJour {
@@ -99,6 +111,10 @@ export interface Api {
   anomaliesOuvertes(): Promise<Anomalie[]>;
   fournisseurs(): Promise<Fournisseur[]>;
   livraisonsDuJour(): Promise<LivraisonJour[]>;
+  stocksMortsDuSite(): Promise<StockMort[]>;
+  stocksMortsSiege(): Promise<StockMortSiege[]>;
+  siegeRetirerProduit(nom: string, fournisseurId: string | null, consigne: string): Promise<void>;
+  siegeCloreProduit(id: string): Promise<void>;
   /** Siège : compte connecté avec le rôle « siege » (tableau de bord au lieu de l'écran tablette). */
   estSiege(): Promise<boolean>;
   tableauSiege(jours: number): Promise<LigneSiege[]>;

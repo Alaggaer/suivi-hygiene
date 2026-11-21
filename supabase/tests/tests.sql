@@ -267,11 +267,47 @@ do $$ declare enc uuid; r uuid; j jsonb; begin
 end $$;
 update auth.claims set jwt = '{"app_metadata":{"role":"siege"}}';
 
+-- stocks morts : le siège déclare un produit retiré de la carte
+update auth.claims set jwt = '{"sub":"00000000-0000-0000-0000-0000000000c1","app_metadata":{"role":"siege"}}';
+do $$ declare p uuid; j jsonb; begin
+  begin perform siege_retirer_produit(' '); raise exception 'ÉCHEC : produit sans nom accepté';
+  exception when invalid_parameter_value then null; end;
+  p := siege_retirer_produit('Sauce cheddar ancienne recette', null, 'À écouler en plat du jour avant le 30/11');
+  insert into inventaires_stock (id, produit_id, site_id, reste, quantite, dlc, photo, decision, par)
+  values (gen_random_uuid(), p, '00000000-0000-0000-0000-000000000001', true, '3 bidons', current_date + 10, 'x/p.webp', 'a_ecouler', '00000000-0000-0000-0000-0000000000a1');
+  j := stocks_morts_siege();
+  assert (select x->>'nom' from jsonb_array_elements(j) x where x->>'id' = p::text) = 'Sauce cheddar ancienne recette', 'produit visible au siège';
+  assert (select s->>'etat' from jsonb_array_elements(j) x, jsonb_array_elements(x->'sites') s where x->>'id' = p::text and s->>'restaurant' = 'DALLAS') = 'a_ecouler', 'DALLAS : à écouler';
+  assert (select s->>'etat' from jsonb_array_elements(j) x, jsonb_array_elements(x->'sites') s where x->>'id' = p::text and s->>'restaurant' = 'BOSTON') = 'a_verifier', 'BOSTON : à vérifier';
+  begin
+    insert into inventaires_stock (id, produit_id, site_id, reste, par) values (gen_random_uuid(), p, '00000000-0000-0000-0000-000000000001', true, '00000000-0000-0000-0000-0000000000a1');
+    raise exception 'ÉCHEC : « il en reste » sans quantité, photo ni décision accepté';
+  exception when check_violation then null; end;
+end $$;
+update auth.claims set jwt = '{"app_metadata":{"role":"siege"}}';
+
 -- règles d'accès : une tablette ne voit que son site
 create role tablette in role authenticated; grant usage on schema public, auth to tablette; grant select, insert, update on all tables in schema public to tablette;
 grant select on auth.claims to tablette; grant execute on all functions in schema auth to tablette;
 update auth.claims set jwt = '{"app_metadata":{"role":"tablette","site_id":"00000000-0000-0000-0000-000000000002"}}';
 set role tablette;
+do $$ declare p uuid; r record; begin
+  select id into p from produits_retires where nom = 'Sauce cheddar ancienne recette';
+  select * into r from stocks_morts_du_site() where produit_id = p;
+  assert r.etat = 'a_verifier' and r.a_faire, 'BOSTON : à vérifier, à faire';
+  assert (select count(*) from inventaires_stock) = 0, 'BOSTON ne voit pas les inventaires de DALLAS';
+  insert into inventaires_stock (id, produit_id, site_id, reste, par) values (gen_random_uuid(), p, '00000000-0000-0000-0000-000000000002', false, '00000000-0000-0000-0000-0000000000a2');
+  select * into r from stocks_morts_du_site() where produit_id = p;
+  assert r.etat = 'solde' and not r.a_faire, 'BOSTON : plus rien, soldé';
+  begin
+    insert into inventaires_stock (id, produit_id, site_id, reste, par) values (gen_random_uuid(), p, '00000000-0000-0000-0000-000000000001', false, '00000000-0000-0000-0000-0000000000a2');
+    raise exception 'ÉCHEC : inventaire pour un autre site accepté';
+  exception when insufficient_privilege then null; end;
+  begin
+    perform siege_retirer_produit('Produit pirate');
+    raise exception 'ÉCHEC : une tablette déclare un produit retiré';
+  exception when insufficient_privilege then null; end;
+end $$;
 do $$ begin
   assert (select count(*) from releves) = 0, 'BOSTON ne voit pas les relevés de DALLAS';
   assert (select count(*) from journal) = 0, 'le journal n''est pas lisible par une tablette';

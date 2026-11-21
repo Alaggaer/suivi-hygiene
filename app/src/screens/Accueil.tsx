@@ -7,9 +7,9 @@ const SOUS: Record<string, string> = {
   nettoyage: "Fin de service", stock_carte: "Produits sortis de la carte", autre: "",
 };
 
-export function Accueil({ taches, anomalies, onTache, onAller }: {
-  taches: Tache[]; anomalies: Anomalie[];
-  onTache: (t: Tache) => void; onAller: (ecran: "releves" | "huile" | "anomalies" | "livraison" | "produit" | "minuteur" | "signaler") => void;
+export function Accueil({ taches, anomalies, stocksAFaire = 0, onTache, onAller }: {
+  taches: Tache[]; anomalies: Anomalie[]; stocksAFaire?: number;
+  onTache: (t: Tache) => void; onAller: (ecran: "releves" | "huile" | "anomalies" | "stocks" | "livraison" | "produit" | "minuteur" | "signaler") => void;
 }) {
   const maintenant = useMaintenant(1000);
   const liste = trierTaches(taches, maintenant);
@@ -51,7 +51,11 @@ export function Accueil({ taches, anomalies, onTache, onAller }: {
         <button className="act" onClick={() => onAller("releves")}><b>Températures</b><span>Relevé hors planning</span></button>
         <button className="act" onClick={() => onAller("huile")}><b>Huile</b><span>Mesure, filtrage, changement</span></button>
         <button className="act alert" onClick={() => onAller("signaler")}><b>Signaler</b><span>Un problème, une photo</span></button>
-        <button className="act" onClick={() => onAller("anomalies")} style={{ gridColumn: "1 / -1", minHeight: 90 }}>
+        <button className="act" onClick={() => onAller("stocks")}>
+          <b>Stocks morts</b><span>Produits sortis de la carte</span>
+          {stocksAFaire > 0 && <span className="badge">{stocksAFaire}</span>}
+        </button>
+        <button className="act" onClick={() => onAller("anomalies")}>
           <b>Anomalies du site</b><span>Suivi jusqu'à la clôture</span>
           {anomalies.length > 0 && <span className="badge">{anomalies.length}</span>}
         </button>

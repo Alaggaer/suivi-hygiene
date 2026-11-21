@@ -13,7 +13,7 @@ export const memoireLocale: Memoire = {
 };
 
 const PREFIXE = "suivi-hygiene:cache:";
-const LECTURES = ["site", "profils", "taches", "enceintes", "friteuses", "seuilsHuile", "etatFriteuses", "livraisonsDuJour", "fournisseurs", "anomaliesOuvertes"] as const;
+const LECTURES = ["site", "profils", "taches", "enceintes", "friteuses", "seuilsHuile", "etatFriteuses", "livraisonsDuJour", "stocksMortsDuSite", "fournisseurs", "anomaliesOuvertes"] as const;
 
 /** Distingue « pas de réseau » (on ressert le cache) d'un vrai refus du serveur (on le montre). */
 export function estErreurReseau(e: unknown): boolean {

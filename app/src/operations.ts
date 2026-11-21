@@ -23,6 +23,10 @@ export type Operation =
       produits_refuses?: string;
     })
   | (Base & { type: "livraison_rangee"; livraison_id: string })
+  | (Base & {
+      type: "stock_mort"; id: string; produit_id: string; reste: boolean;
+      quantite?: string; dlc?: string; photo?: string; decision?: "jete" | "transfere" | "a_ecouler"; transfert_vers?: string;
+    })
   | (Base & { type: "utilisation"; id: string; photo: string; famille: string; service: "midi" | "soir" })
   | (Base & {
       type: "minuteur"; id: string; type_minuteur: "refroidissement" | "remise_temperature"; plat: string;
