@@ -2,7 +2,7 @@
 // Appelée par la planification de la base : ?mode=alertes toutes les 5 min, ?mode=resume chaque soir.
 // Secrets : RESEND_API_KEY, EXPEDITEUR (ex. "Suivi Hygiène <alertes@mondomaine.fr>"), LIEN_APP.
 import { createClient } from "npm:@supabase/supabase-js@2.45.4";
-import { emailsResume, regrouper, type Email } from "./regles.ts";
+import { alerteSauvegarde, emailsResume, regrouper, type Email } from "./regles.ts";
 
 const sb = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
 const CLE = Deno.env.get("RESEND_API_KEY");
@@ -27,6 +27,20 @@ Deno.serve(async (req) => {
     sb.from("sites").select("id, nom, ville"),
   ]);
   if (e1 || e2) return Response.json({ erreur: (e1 ?? e2)!.message }, { status: 500 });
+
+  if (mode === "sauvegarde") {
+    // Alerte si aucune sauvegarde réussie depuis plus de 26 h (au plus une fois par 24 h).
+    const [{ data: der }, { data: reg }] = await Promise.all([
+      sb.from("sauvegardes").select("at").order("at", { ascending: false }).limit(1).maybeSingle(),
+      sb.from("reglages").select("valeur").eq("cle", "sauvegarde_alerte").maybeSingle(),
+    ]);
+    const email = alerteSauvegarde(der?.at ?? null, (reg?.valeur as { at?: string } | null)?.at ?? null, dests ?? [],
+      "https://github.com/Alaggaer/suivi-hygiene-sauvegardes/actions");
+    if (!email) return Response.json({ envoyes: 0, derniere: der?.at ?? null });
+    const err = await envoyer(email);
+    if (!err) await sb.from("reglages").upsert({ cle: "sauvegarde_alerte", valeur: { at: new Date().toISOString() } });
+    return Response.json({ envoyes: err ? 0 : 1, erreur: err, derniere: der?.at ?? null });
+  }
 
   if (mode === "resume") {
     const { data: resumes, error } = await sb.rpc("resume_jour");

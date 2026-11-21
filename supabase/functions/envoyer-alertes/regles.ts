@@ -79,3 +79,27 @@ export function emailsResume(resumes: ResumeSite[], dests: Destinataire[], lienA
   }
   return out;
 }
+
+/** Délai sans sauvegarde réussie avant d'alerter, et intervalle minimal entre deux alertes. */
+export const SAUVEGARDE = { maxHeures: 26, rappelHeures: 24 };
+
+/**
+ * E-mail au siège si aucune sauvegarde n'a réussi depuis plus de 26 h (une fois par 24 h au plus), sinon null.
+ * `derniere` : date de la dernière sauvegarde réussie (null : aucune) ; `derniereAlerte` : date du dernier e-mail envoyé.
+ */
+export function alerteSauvegarde(derniere: string | null, derniereAlerte: string | null, dests: Destinataire[], lienDepot: string, maintenant = new Date()): Email | null {
+  const h = (iso: string) => (maintenant.getTime() - new Date(iso).getTime()) / 3600_000;
+  if (derniere && h(derniere) <= SAUVEGARDE.maxHeures) return null;
+  if (derniereAlerte && h(derniereAlerte) < SAUVEGARDE.rappelHeures) return null;
+  const a = [...new Set(dests.filter((d) => d.actif && d.site_id === null && d.role === "siege").map((d) => d.email))];
+  if (!a.length) return null;
+  const depuis = derniere
+    ? `depuis le ${new Date(derniere).toLocaleString("fr-FR", { timeZone: "Europe/Paris", day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" })} (${Math.floor(h(derniere))} h)`
+    : "depuis le début du suivi";
+  return {
+    a, ids: [], sujet: "⚠️ Sauvegarde Suivi Hygiène en retard",
+    html: `<p>Aucune sauvegarde de la base n'a réussi ${echapper(depuis)}.</p>`
+      + `<p>Les données restent dans la base, mais la copie de secours n'est plus à jour. À vérifier : <a href="${echapper(lienDepot)}">les exécutions de la sauvegarde</a>.</p>`
+      + `<p>Ce message est renvoyé au plus une fois par jour tant que le problème dure.</p>`,
+  };
+}

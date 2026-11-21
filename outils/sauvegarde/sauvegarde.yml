@@ -7,6 +7,7 @@ name: Sauvegarde quotidienne
 on:
   schedule:
     - cron: "30 2 * * *"      # chaque nuit vers 3 h 30 (Paris, hiver)
+    - cron: "17 6 * * *"      # secours vers 7 h 17 : GitHub retarde ou saute parfois ses tâches planifiées
   workflow_dispatch:
 
 permissions:
@@ -95,6 +96,20 @@ jobs:
             suivi-hygiene-${{ env.JOUR }}.tar.gpg
             comptes.txt
           retention-days: 90
+
+      # La base surveille ces signalements et alerte le siège si plus de 26 h sans sauvegarde réussie.
+      - name: Signaler la sauvegarde réussie à la base
+        env:
+          PGPASSWORD: "${{ secrets.SUPABASE_DB_PASSWORD }}"
+          PGHOST: aws-0-eu-west-3.pooler.supabase.com
+          PGPORT: "5432"
+          PGUSER: postgres.ldsxlovhueuzmhrzofjo
+          PGDATABASE: postgres
+          PGSSLMODE: require
+        run: |
+          COMPTES=$(python3 -c "import json,sys; print(json.dumps({l.split('|')[0]: l.split('|')[1].strip() for l in open('comptes.txt') if '|' in l}))")
+          # Variable psql lue depuis l'entrée standard (pas d'interpolation avec -c) : valeur citée proprement.
+          echo "insert into public.sauvegardes (comptes) values (:'comptes'::jsonb);" | psql -q -v ON_ERROR_STOP=1 -v comptes="$COMPTES"
 
       - name: Relevé dans l'historique du dépôt
         run: |

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { destinatairesPour, emailsResume, regrouper, type Destinataire } from "../../supabase/functions/envoyer-alertes/regles";
+import { alerteSauvegarde, destinatairesPour, emailsResume, regrouper, type Destinataire } from "../../supabase/functions/envoyer-alertes/regles";
 
 const S1 = "site-1", S2 = "site-2";
 const sites = [{ id: S1, nom: "DALLAS", ville: "CHAMBRAY" }, { id: S2, nom: "BOSTON", ville: "RENNES" }];
@@ -55,5 +55,30 @@ describe("résumé du soir", () => {
     const siege = emails[1].html;
     expect(siege.indexOf("BOSTON")).toBeLessThan(siege.indexOf("DALLAS"));
     expect(siege).toContain("Relevé du soir");
+  });
+});
+
+describe("alerte sauvegarde en retard", () => {
+  const M = new Date("2026-11-21T12:00:00Z");
+  const h = (n: number) => new Date(M.getTime() - n * 3600_000).toISOString();
+  const siege = [{ site_id: null, role: "siege" as const, nom: "S", email: "s@x.fr", actif: true },
+    { site_id: null, role: "siege" as const, nom: "S2", email: "s@x.fr", actif: true },
+    { site_id: "a", role: "chef" as const, nom: "C", email: "c@x.fr", actif: true }];
+  it("rien tant que la dernière sauvegarde a moins de 26 h", () => {
+    expect(alerteSauvegarde(h(25), null, siege, "https://x", M)).toBeNull();
+  });
+  it("alerte le siège seulement (sans doublon) au-delà de 26 h ou sans aucune sauvegarde", () => {
+    const e = alerteSauvegarde(h(30), null, siege, "https://x", M)!;
+    expect(e.a).toEqual(["s@x.fr"]);
+    expect(e.sujet).toContain("Sauvegarde");
+    expect(e.html).toContain("30 h");
+    expect(alerteSauvegarde(null, null, siege, "https://x", M)!.html).toContain("depuis le début du suivi");
+  });
+  it("pas plus d'une alerte par 24 h", () => {
+    expect(alerteSauvegarde(h(40), h(10), siege, "https://x", M)).toBeNull();
+    expect(alerteSauvegarde(h(60), h(25), siege, "https://x", M)).not.toBeNull();
+  });
+  it("personne au siège : pas d'e-mail", () => {
+    expect(alerteSauvegarde(h(40), null, siege.filter((d) => d.role !== "siege"), "https://x", M)).toBeNull();
   });
 });
