@@ -410,6 +410,107 @@ do $$ declare n int; t taches; e1 uuid; e2 uuid; e3 uuid; hotte uuid; j jsonb; b
 end $$;
 update auth.claims set jwt = '{"app_metadata":{"role":"siege"}}';
 
+-- PMS : plan d'action, contrôles périodiques, métrologie
+insert into profils(id,site_id,nom,role,pin_hash) values ('00000000-0000-0000-0000-0000000000a5','00000000-0000-0000-0000-000000000002','Tom','equipe',crypt('5151',gen_salt('bf')));
+insert into anomalies(id,site_id,source,categorie,gravite,titre) values ('00000000-0000-0000-0000-0000000000c6','00000000-0000-0000-0000-000000000002','manuel','x','mineure','Porte réserve');
+insert into profils(id,site_id,nom,role,pin_hash) values ('00000000-0000-0000-0000-0000000000a4','00000000-0000-0000-0000-000000000001','Marc','responsable',crypt('4444',gen_salt('bf')));
+update auth.claims set jwt = '{"sub":"00000000-0000-0000-0000-0000000000c1","app_metadata":{"role":"siege"}}';
+do $$ declare m uuid; c uuid; an uuid; ap uuid; j jsonb; v_auj date := (now() at time zone 'Europe/Paris')::date; begin
+  -- contrôle conforme : à jour, prochaine date = +3 mois
+  select id into m from controles_modeles where titre like 'Nettoyage des condenseurs%';
+  begin
+    insert into controles_faits (id, site_id, modele_id, date_realisation, conforme, par) values (gen_random_uuid(), '00000000-0000-0000-0000-000000000001', m, v_auj, true, '00000000-0000-0000-0000-0000000000a1');
+    raise exception 'ÉCHEC : contrôle sans la photo obligatoire accepté';
+  exception when check_violation then null; end;
+  insert into controles_faits (id, site_id, modele_id, date_realisation, conforme, photo, par) values (gen_random_uuid(), '00000000-0000-0000-0000-000000000001', m, v_auj - 100, true, '00000000-0000-0000-0000-000000000001/c.webp', '00000000-0000-0000-0000-0000000000a1');
+  j := etat_controles('00000000-0000-0000-0000-000000000001');
+  assert (select x->>'etat' from jsonb_array_elements(j) x where x->>'id' = m::text) = 'retard', 'fait il y a 100 jours, tous les 3 mois : en retard';
+  assert (select x->>'etat' from jsonb_array_elements(j) x where x->>'titre' like 'Moustiquaires%') = 'jamais', 'jamais fait';
+  insert into controles_faits (id, site_id, modele_id, date_realisation, conforme, photo, par) values (gen_random_uuid(), '00000000-0000-0000-0000-000000000001', m, v_auj, true, '00000000-0000-0000-0000-000000000001/c2.webp', '00000000-0000-0000-0000-0000000000a1');
+  j := etat_controles('00000000-0000-0000-0000-000000000001');
+  assert (select x->>'etat' = 'a_jour' and (x->>'prochaine')::date = (v_auj + interval '3 months')::date from jsonb_array_elements(j) x where x->>'id' = m::text), 'à jour, prochaine dans 3 mois';
+  begin
+    insert into controles_faits (id, site_id, modele_id, date_realisation, conforme, par) values (gen_random_uuid(), '00000000-0000-0000-0000-000000000001', m, v_auj + 2, true, '00000000-0000-0000-0000-0000000000a1');
+    raise exception 'ÉCHEC : date future acceptée';
+  exception when invalid_parameter_value then null; end;
+  -- non conforme : explication + photo obligatoires, une action est créée
+  select id into m from controles_modeles where titre like 'Joints des portes%';
+  begin
+    insert into controles_faits (id, site_id, modele_id, date_realisation, conforme, photo, par) values (gen_random_uuid(), '00000000-0000-0000-0000-000000000001', m, v_auj, false, '00000000-0000-0000-0000-000000000001/j.webp', '00000000-0000-0000-0000-0000000000a1');
+    raise exception 'ÉCHEC : non conforme sans explication accepté';
+  exception when check_violation then null; end;
+  c := gen_random_uuid();
+  insert into controles_faits (id, site_id, modele_id, date_realisation, conforme, observation, photo, par) values (c, '00000000-0000-0000-0000-000000000001', m, v_auj, false, 'Joint CF positive déchiré', '00000000-0000-0000-0000-000000000001/j.webp', '00000000-0000-0000-0000-0000000000a1');
+  select id into an from anomalies where source = 'controle' and ref_id = c;
+  assert an is not null and (select titre from anomalies where id = an) = 'Joints des portes des enceintes froides : Joint CF positive déchiré', 'action créée';
+  assert (select gravite from anomalies where id = an) = 'majeure', 'action majeure';
+  -- plan d'action : prévoir, l'équipier ne peut pas
+  begin
+    perform planifier_action(an, '00000000-0000-0000-0000-0000000000a1', 'x', v_auj + 7, null);
+    raise exception 'ÉCHEC : action vide acceptée';
+  exception when invalid_parameter_value then null; end;
+  perform planifier_action(an, '00000000-0000-0000-0000-0000000000a1', 'Commander et poser un joint neuf', v_auj + 7, '00000000-0000-0000-0000-0000000000a4');
+  j := plan_action('00000000-0000-0000-0000-000000000001');
+  assert (select x->>'responsable' = 'Marc' and x->>'action_prevue' = 'Commander et poser un joint neuf' from jsonb_array_elements(j) x where x->>'id' = an::text), 'action prévue visible';
+  -- correction avec preuve ; majeure : le responsable ne peut pas clore, le siège oui
+  begin
+    perform traiter_action(an, '00000000-0000-0000-0000-0000000000a3', 'Joint posé', '00000000-0000-0000-0000-000000000002/x.webp');
+    raise exception 'ÉCHEC : preuve d''un autre restaurant acceptée';
+  exception when invalid_parameter_value then null; end;
+  perform traiter_action(an, '00000000-0000-0000-0000-0000000000a3', 'Joint posé', '00000000-0000-0000-0000-000000000001/preuve.webp');
+  assert (select statut = 'traitee' and preuve = '00000000-0000-0000-0000-000000000001/preuve.webp' from anomalies where id = an), 'traitée avec preuve';
+  begin
+    perform changer_statut_anomalie(an, 'verifiee', '00000000-0000-0000-0000-0000000000a4');
+    raise exception 'ÉCHEC : le responsable clôt une action majeure';
+  exception when insufficient_privilege then null; end;
+  perform siege_changer_statut(an, 'verifiee');
+  assert (select statut from anomalies where id = an) = 'verifiee', 'close par le siège';
+  -- mineure : le responsable la clôt seul
+  insert into anomalies (id, site_id, source, categorie, gravite, titre) values ('00000000-0000-0000-0000-0000000000c7', '00000000-0000-0000-0000-000000000001', 'manuel', 'Matériel', 'mineure', 'Ampoule grillée');
+  perform traiter_action('00000000-0000-0000-0000-0000000000c7', '00000000-0000-0000-0000-0000000000a3', 'Changée', null);
+  perform changer_statut_anomalie('00000000-0000-0000-0000-0000000000c7', 'verifiee', '00000000-0000-0000-0000-0000000000a4');
+  assert (select statut from anomalies where id = '00000000-0000-0000-0000-0000000000c7') = 'verifiee', 'mineure close par le responsable';
+  -- relance : échéance passée → responsable, une seule fois
+  insert into anomalies (id, site_id, source, categorie, gravite, titre, action_prevue, echeance) values ('00000000-0000-0000-0000-0000000000c8', '00000000-0000-0000-0000-000000000001', 'manuel', 'x', 'majeure', 'Siphon bouché', 'Déboucher', v_auj - 2);
+  insert into controles_faits (id, site_id, modele_id, date_realisation, conforme, par)
+  select gen_random_uuid(), '00000000-0000-0000-0000-000000000001', id, v_auj - 40, true, '00000000-0000-0000-0000-0000000000a1' from controles_modeles where titre = 'Moustiquaires';
+  perform relancer_pms();
+  assert (select count(*) from notifications where ref_id = '00000000-0000-0000-0000-0000000000c8' and destinataire = 'responsable') = 1, 'action en retard relancée';
+  assert exists (select 1 from notifications where ref_table = 'controles_modeles' and site_id = '00000000-0000-0000-0000-000000000001'), 'contrôle en retard relancé';
+  perform relancer_pms();
+  assert (select count(*) from notifications where ref_id = '00000000-0000-0000-0000-0000000000c8') = 1, 'relancée une seule fois';
+  perform planifier_action('00000000-0000-0000-0000-0000000000c8', null, 'Faire passer le plombier', v_auj + 3, null);
+  assert (select echeance = v_auj + 3 and not echeance_relancee from anomalies where id = '00000000-0000-0000-0000-0000000000c8'), 'le siège replanifie : relance réarmée';
+  -- siège : contrôle par prestataire avec PDF
+  select id into m from controles_modeles where titre like 'Passage du prestataire%';
+  perform siege_enregistrer_controle('00000000-0000-0000-0000-000000000002', m, v_auj - 3, true, null, 'Rentokil', 'documents/rapport.pdf');
+  assert (select x->'dernier'->>'prestataire' from jsonb_array_elements(etat_controles('00000000-0000-0000-0000-000000000002')) x where x->>'id' = m::text) = 'Rentokil', 'rapport du prestataire';
+  begin
+    perform siege_enregistrer_controle('00000000-0000-0000-0000-000000000002', m, v_auj, true, null, null, '00000000-0000-0000-0000-000000000002/x.pdf');
+    raise exception 'ÉCHEC : document mal placé accepté';
+  exception when invalid_parameter_value then null; end;
+  -- métrologie : glace fondante, tolérance 0,5 °C calculée par le serveur
+  insert into appareils_mesure (id, site_id, nom) values ('00000000-0000-0000-0000-0000000000b1', '00000000-0000-0000-0000-000000000001', 'Sonde piquante 1');
+  insert into verifications_mesure (id, site_id, appareil_id, methode, valeur, conforme, photo, par)
+  values (gen_random_uuid(), '00000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-0000000000b1', 'glace', 0.4, false, '00000000-0000-0000-0000-000000000001/g.webp', '00000000-0000-0000-0000-0000000000a1');
+  assert (select x->>'etat' from jsonb_array_elements(etat_metrologie('00000000-0000-0000-0000-000000000001')) x) = 'a_jour', '0,4 °C : conforme (calcul serveur)';
+  insert into verifications_mesure (id, site_id, appareil_id, methode, valeur, conforme, photo, par)
+  values (gen_random_uuid(), '00000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-0000000000b1', 'glace', 1.2, true, '00000000-0000-0000-0000-000000000001/g2.webp', '00000000-0000-0000-0000-0000000000a1');
+  assert (select x->>'etat' from jsonb_array_elements(etat_metrologie('00000000-0000-0000-0000-000000000001')) x) = 'hors_service', '1,2 °C : hors service malgré « conforme » envoyé';
+  assert exists (select 1 from anomalies where source = 'metrologie' and titre = 'Appareil hors tolérance : Sonde piquante 1 (lu 1.2 °C au lieu de 0)'), 'action métrologie';
+  begin
+    insert into verifications_mesure (id, site_id, appareil_id, methode, valeur, conforme, par)
+    values (gen_random_uuid(), '00000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-0000000000b1', 'ebullition', 99.5, true, '00000000-0000-0000-0000-0000000000a1');
+    raise exception 'ÉCHEC : vérification sans photo acceptée';
+  exception when check_violation then null; end;
+  insert into verifications_mesure (id, site_id, appareil_id, methode, valeur, conforme, photo, par)
+  values (gen_random_uuid(), '00000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-0000000000b1', 'ebullition', 99.5, false, '00000000-0000-0000-0000-000000000001/e.webp', '00000000-0000-0000-0000-0000000000a1');
+  assert (select not hors_service from appareils_mesure where id = '00000000-0000-0000-0000-0000000000b1'), 'remis en service après une vérification conforme';
+  j := pms_groupe();
+  assert (select (x->>'actions_ouvertes')::int >= 1 from jsonb_array_elements(j) x where x->>'restaurant' = 'DALLAS'), 'vue groupe';
+end $$;
+update auth.claims set jwt = '{"app_metadata":{"role":"siege"}}';
+
 -- règles d'accès : une tablette ne voit que son site
 create role tablette in role authenticated; grant usage on schema public, auth to tablette; grant select, insert, update on all tables in schema public to tablette;
 grant select on auth.claims to tablette; grant execute on all functions in schema auth to tablette;
@@ -426,6 +527,38 @@ do $$ declare p uuid; r record; begin
   begin
     insert into inventaires_stock (id, produit_id, site_id, reste, par) values (gen_random_uuid(), p, '00000000-0000-0000-0000-000000000001', false, '00000000-0000-0000-0000-0000000000a2');
     raise exception 'ÉCHEC : inventaire pour un autre site accepté';
+  exception when insufficient_privilege then null; end;
+  begin
+    perform planifier_action('00000000-0000-0000-0000-0000000000c6', '00000000-0000-0000-0000-0000000000a5', 'Régler la porte', (now() at time zone 'Europe/Paris')::date + 2, null);
+    raise exception 'ÉCHEC : un équipier planifie une action';
+  exception when insufficient_privilege then null; end;
+  perform planifier_action('00000000-0000-0000-0000-0000000000c6', '00000000-0000-0000-0000-0000000000a2', 'Régler la porte', (now() at time zone 'Europe/Paris')::date + 2, '00000000-0000-0000-0000-0000000000a5');
+  assert (select x->>'responsable' from jsonb_array_elements(plan_action('00000000-0000-0000-0000-000000000002')) x where x->>'id' = '00000000-0000-0000-0000-0000000000c6') = 'Tom', 'le chef de BOSTON planifie';
+  begin
+    perform planifier_action('00000000-0000-0000-0000-0000000000c8', '00000000-0000-0000-0000-0000000000a2', 'x x x', (now() at time zone 'Europe/Paris')::date + 2, null);
+    raise exception 'ÉCHEC : BOSTON planifie une action de DALLAS';
+  exception when no_data_found then null; end;
+  -- PMS : BOSTON ne voit pas les contrôles ni le plan d'action de DALLAS
+  begin
+    perform etat_controles('00000000-0000-0000-0000-000000000001');
+    raise exception 'ÉCHEC : BOSTON lit les contrôles de DALLAS';
+  exception when insufficient_privilege then null; end;
+  begin
+    perform plan_action('00000000-0000-0000-0000-000000000001');
+    raise exception 'ÉCHEC : BOSTON lit le plan d''action de DALLAS';
+  exception when insufficient_privilege then null; end;
+  assert jsonb_typeof(etat_controles('00000000-0000-0000-0000-000000000002')) = 'array', 'BOSTON lit ses contrôles';
+  assert (select count(*) from controles_faits where site_id = '00000000-0000-0000-0000-000000000001') = 0, 'contrôles de DALLAS invisibles';
+  assert (select count(*) from appareils_mesure) = 0, 'appareils de DALLAS invisibles';
+  begin
+    perform ajouter_appareil('00000000-0000-0000-0000-0000000000a1', 'Sonde pirate', 'sonde', null);
+    raise exception 'ÉCHEC : appareil ajouté par une personne d''un autre site';
+  exception when insufficient_privilege then null; end;
+  perform ajouter_appareil('00000000-0000-0000-0000-0000000000a2', 'Sonde 1', 'sonde', 'SN-1');
+  assert (select count(*) from appareils_mesure) = 1, 'BOSTON ajoute sa sonde';
+  begin
+    perform pms_groupe();
+    raise exception 'ÉCHEC : une tablette lit la vue groupe';
   exception when insufficient_privilege then null; end;
   -- nettoyage : BOSTON ne voit ni ne coche la tâche de DALLAS ; il voit le plan et les produits
   assert jsonb_array_length(nettoyage_tache((select id from taches where zone = 'Plonge' and site_id = '00000000-0000-0000-0000-000000000001' limit 1))) = 0, 'BOSTON ne voit pas le nettoyage de DALLAS';
@@ -469,7 +602,7 @@ do $$ begin
   assert (select count(*) from releves) = 0, 'BOSTON ne voit pas les relevés de DALLAS';
   assert (select count(*) from journal) = 0, 'le journal n''est pas lisible par une tablette';
   assert (select count(*) from taches where site_id <> '00000000-0000-0000-0000-000000000002') = 0, 'BOSTON ne voit pas les tâches de DALLAS';
-  assert (select count(*) from profils_du_site()) = 1, 'BOSTON ne voit que ses employés';
+  assert (select count(*) from profils_du_site()) = 2, 'BOSTON ne voit que ses employés (Lea, Tom)';
   assert not verifier_pin('00000000-0000-0000-0000-0000000000a1','1234'), 'PIN d''un autre site refusé';
   begin
     insert into releves(site_id,enceinte_id,valeur,t_max,par) values ('00000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-0000000000e1',2,3,'00000000-0000-0000-0000-0000000000a2');

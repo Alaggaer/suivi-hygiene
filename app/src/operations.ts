@@ -27,6 +27,9 @@ export type Operation =
       type: "stock_mort"; id: string; produit_id: string; reste: boolean;
       quantite?: string; dlc?: string; photo?: string; decision?: "jete" | "transfere" | "a_ecouler"; transfert_vers?: string;
     })
+  | (Base & { type: "controle_fait"; id: string; modele_id: string; date_realisation: string; conforme: boolean; observation?: string; prestataire?: string; photo?: string })
+  | (Base & { type: "verification_mesure"; id: string; appareil_id: string; methode: "glace" | "ebullition" | "certificat"; valeur?: number; conforme: boolean; photo: string })
+  | (Base & { type: "action_planifiee"; anomalie_id: string; action: string; echeance: string; responsable_id: string | null })
   | (Base & { type: "nettoyage_fait"; id: string; tache_id: string; element_id: string; photo?: string })
   | (Base & {
       type: "reponse_alerte"; id: string; alerte_id: string; trouve: boolean;
@@ -37,7 +40,7 @@ export type Operation =
       type: "minuteur"; id: string; type_minuteur: "refroidissement" | "remise_temperature"; plat: string;
       t_debut: number; debut_at: string; t_fin: number; fin_at: string; conforme: boolean; action?: string;
     })
-  | (Base & { type: "anomalie_statut"; anomalie_id: string; statut: "traitee" | "verifiee"; commentaire?: string });
+  | (Base & { type: "anomalie_statut"; anomalie_id: string; statut: "traitee" | "verifiee"; commentaire?: string; preuve?: string });
 
 export type TypeOperation = Operation["type"];
 

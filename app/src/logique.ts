@@ -1,5 +1,5 @@
 /** Règles métier pures (sans écran ni serveur) : ce sont elles que les tests unitaires vérifient. */
-import type { EtatFriteuse, SeuilsHuile, Tache } from "./types";
+import type { EtatFriteuse, SeuilsHuile, Tache, Gravite } from "./types";
 
 export const MIN = 60_000;
 
@@ -106,10 +106,27 @@ export function minuteurConforme(type: keyof typeof REGLES_MINUTEUR, tFin: numbe
 
 /** Cycle d'une anomalie : ouverte → traitée (par tous) → vérifiée (chef, responsable ou siège). */
 export type StatutAnomalie = "ouverte" | "traitee" | "verifiee";
-export function transitionPermise(de: StatutAnomalie, vers: StatutAnomalie, role: "equipe" | "chef" | "responsable" | "siege"): boolean {
+/** Clôture : mineure par le chef ou le responsable du site ; majeure ou critique par le siège seulement. */
+export function transitionPermise(de: StatutAnomalie, vers: StatutAnomalie, role: "equipe" | "chef" | "responsable" | "siege", gravite: Gravite = "mineure"): boolean {
   if (de === "ouverte" && vers === "traitee") return true;
-  if (de === "traitee" && vers === "verifiee") return role !== "equipe";
+  if (de === "traitee" && vers === "verifiee") return role === "siege" || (gravite === "mineure" && role !== "equipe");
   return false;
+}
+
+/** Contrôles périodiques et sondes : libellé et couleur de l'état. */
+export const ETAT_CONTROLE: Record<string, { libelle: string; classe: string }> = {
+  a_jour: { libelle: "À jour", classe: "ok" }, bientot: { libelle: "Bientôt", classe: "warn" }, retard: { libelle: "En retard", classe: "bad" },
+  jamais: { libelle: "Jamais fait", classe: "bad" }, hors_service: { libelle: "Hors service", classe: "bad" },
+};
+
+/** Métrologie : conformité d'une lecture (glace fondante 0 °C ± 0,5 ; eau bouillante 100 °C ± 1), comme le serveur. */
+export function lectureConforme(methode: "glace" | "ebullition", valeur: number): boolean {
+  return methode === "glace" ? Math.abs(valeur) <= 0.5 : Math.abs(valeur - 100) <= 1;
+}
+
+/** Une action est en retard si son échéance (jour, heure de Paris) est passée et qu'elle n'est pas corrigée. */
+export function actionEnRetard(a: { statut: StatutAnomalie; echeance: string | null }, aujourdhui: string): boolean {
+  return a.statut === "ouverte" && !!a.echeance && a.echeance < aujourdhui;
 }
 
 /** Tableau du siège : taux de tâches faites à l'heure (null si aucune tâche échue). */

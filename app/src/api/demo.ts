@@ -1,6 +1,6 @@
-import type { ElementATaire, ElementNettoyage, ProduitEntretien, TacheNettoyage, AlerteSiege, ReponseAlerte, Api, Anomalie, AnomalieSiege, Correction, DecisionStock, Employe, EnceinteGestion, FournisseurGestion, FriteuseGestion, ModeleTache, SiteGestion, Tablette, EtatStock, LivraisonJour, Rattrapage, EtatRestaurant, EtatFriteuse, Preuves, Profil, Tache } from "../types";
+import type { ActionPlan, AppareilMesure, ControleSite, ModeleControle, ElementATaire, ElementNettoyage, ProduitEntretien, TacheNettoyage, AlerteSiege, ReponseAlerte, Api, Anomalie, AnomalieSiege, Correction, DecisionStock, Employe, EnceinteGestion, FournisseurGestion, FriteuseGestion, ModeleTache, SiteGestion, Tablette, EtatStock, LivraisonJour, Rattrapage, EtatRestaurant, EtatFriteuse, Preuves, Profil, Tache } from "../types";
 import { ErreurDefinitive, type Operation } from "../operations";
-import { transitionPermise } from "../logique";
+import { lectureConforme, transitionPermise } from "../logique";
 
 /** Serveur simulé en mémoire : sert au développement et aux démonstrations, rien n'est conservé. */
 const MIN = 60_000;
@@ -23,8 +23,11 @@ const taches: Tache[] = [
   { id: "t7", type: "nettoyage", titre: "Nettoyage sanitaires", echeance: iso(t0 + 240 * MIN), faite_at: null, faite_par_nom: null, escalade: 0 },
   { id: "t5", type: "releves", titre: "Relevé températures du soir", echeance: iso(t0 + 390 * MIN), faite_at: null, faite_par_nom: null, escalade: 0 },
 ];
-const anomalies: Anomalie[] = [
+type AnomalieDemo = Anomalie & Partial<Pick<ActionPlan, "action_prevue" | "echeance" | "responsable_id" | "preuve" | "traitee_commentaire" | "photo" | "source">>;
+const anomalies: AnomalieDemo[] = [
   { id: "a1", titre: "Joint de porte abîmé · chambre froide positive", categorie: "Matériel", gravite: "mineure", statut: "ouverte", cree_at: iso(t0 - 26 * 60 * MIN) },
+  { id: "a2", titre: "Moustiquaires : moustiquaire de la réserve déchirée", categorie: "Nuisibles", gravite: "majeure", statut: "ouverte", cree_at: iso(t0 - 9 * 24 * 60 * MIN),
+    source: "controle", action_prevue: "Commander une moustiquaire sur mesure", echeance: new Date(t0 - 2 * 24 * 60 * MIN).toLocaleDateString("sv-SE"), responsable_id: "p4" },
 ];
 const SITES_DEMO = [
   ["ATLANTA", "LANGUEUX"], ["BOSTON", "RENNES"], ["COLUMBIA", "BRÉTIGNY-SUR-ORGE"], ["DALLAS", "CHAMBRAY"],
@@ -48,6 +51,51 @@ const produitsDemo: { id: string; nom: string; fournisseur: string | null; consi
           { site_id: "s1", reste: false, quantite: null, dlc: null, photo: null, decision: null, transfert_vers: null, par: "Léa", at: iso(t0 - 4 * 24 * 60 * MIN) }] },
 ];
 const etatInv = (i?: InvDemo): EtatStock => (!i ? "a_verifier" : !i.reste || i.decision === "jete" || i.decision === "transfere" ? "solde" : "a_ecouler");
+/** Espace PMS en démo : contrôles périodiques et sondes de DALLAS. */
+const jourDemo = (j: number) => new Date(t0 + j * 24 * 60 * MIN).toLocaleDateString("sv-SE", { timeZone: "Europe/Paris" });
+const ajoutMois = (d: string, m: number) => { const x = new Date(`${d}T12:00:00`); x.setMonth(x.getMonth() + m); return x.toLocaleDateString("sv-SE"); };
+const modelesDemo: ModeleControle[] = ([
+  ["entretien", "Nettoyage des condenseurs des groupes froids", "Couper le groupe, brosser et aspirer les ailettes", 3, "photo", false],
+  ["entretien", "Hotte et conduits d'extraction : dégraissage complet", "Par une entreprise spécialisée ; garder le certificat", 6, "document", true],
+  ["entretien", "Joints des portes des enceintes froides", "Joints entiers, souples, sans moisissure", 1, "aucune", false],
+  ["nuisibles", "Passage du prestataire de dératisation et désinsectisation", "Joindre le rapport de passage", 3, "document", true],
+  ["nuisibles", "Moustiquaires", "Présentes sur les ouvrants, sans trou, propres", 1, "aucune", false],
+] as const).map(([rubrique, titre, methode, periodicite_mois, preuve, prestataire], i) => ({
+  id: `cm${i + 1}`, rubrique, titre, methode, periodicite_mois, preuve, prestataire, sites: null, ordre: i, actif: true }));
+const controlesFaitsDemo: { site: string; modele: string; date: string; conforme: boolean; observation: string | null; prestataire: string | null; photo: string | null; document: string | null; par: string }[] = [
+  { site: "s3", modele: "cm1", date: jourDemo(-100), conforme: true, observation: null, prestataire: null, photo: "demo/s1.webp", document: null, par: "Karim" },
+  { site: "s3", modele: "cm2", date: jourDemo(-60), conforme: true, observation: null, prestataire: "Hotte Service", photo: "demo/s2.webp", document: null, par: "Thomas" },
+  { site: "s3", modele: "cm3", date: jourDemo(-10), conforme: true, observation: null, prestataire: null, photo: null, document: null, par: "Karim" },
+  { site: "s3", modele: "cm5", date: jourDemo(-9), conforme: false, observation: "moustiquaire de la réserve déchirée", prestataire: null, photo: "demo/s1.webp", document: null, par: "Karim" },
+];
+function etatControlesDemo(site: string): ControleSite[] {
+  const auj = jourDemo(0), dans15 = jourDemo(15);
+  return modelesDemo.filter((m) => m.actif).map((m) => {
+    const d = controlesFaitsDemo.filter((f) => f.site === site && f.modele === m.id).sort((a, b) => b.date.localeCompare(a.date))[0];
+    const prochaine = d ? ajoutMois(d.date, m.periodicite_mois) : null;
+    return { id: m.id!, rubrique: m.rubrique, titre: m.titre, methode: m.methode, periodicite_mois: m.periodicite_mois, preuve: m.preuve, prestataire: m.prestataire,
+      dernier: d ? { date: d.date, conforme: d.conforme, observation: d.observation, prestataire: d.prestataire, photo: d.photo, document: d.document, par: d.par } : null,
+      prochaine, etat: !prochaine ? "jamais" : prochaine < auj ? "retard" : prochaine <= dans15 ? "bientot" : "a_jour" };
+  });
+}
+const appareilsDemo: (Omit<AppareilMesure, "etat" | "prochaine">)[] = [
+  { id: "am1", nom: "Sonde piquante cuisine", type: "sonde", numero: "TS-0412", hors_service: false,
+    dernier: { date: jourDemo(-200), methode: "glace", valeur: 0.2, conforme: true, photo: "demo/s1.webp", document: null, par: "Karim" } },
+  { id: "am2", nom: "Thermomètre infrarouge livraisons", type: "infrarouge", numero: null, hors_service: false, dernier: null },
+];
+function etatMetrologieDemo(): AppareilMesure[] {
+  const auj = jourDemo(0), dans30 = jourDemo(30);
+  return appareilsDemo.map((a) => {
+    const prochaine = a.dernier ? ajoutMois(a.dernier.date, 12) : null;
+    return { ...a, prochaine, etat: a.hors_service ? "hors_service" : !prochaine ? "jamais" : prochaine < auj ? "retard" : prochaine <= dans30 ? "bientot" : "a_jour" };
+  });
+}
+function planActionDemo(): ActionPlan[] {
+  return anomalies.map((a) => ({ id: a.id, titre: a.titre, categorie: a.categorie, gravite: a.gravite, statut: a.statut, source: a.source ?? "manuel", cree_at: a.cree_at,
+    photo: a.photo ?? null, action_prevue: a.action_prevue ?? null, echeance: a.echeance ?? null, responsable_id: a.responsable_id ?? null,
+    responsable: profils.find((p) => p.id === a.responsable_id)?.nom ?? null, preuve: a.preuve ?? null,
+    traitee_at: null, traitee_par: null, traitee_commentaire: a.traitee_commentaire ?? null, verifiee_at: null, verifiee_par: null }));
+}
 /** Plan de nettoyage en démo : produits, plan du groupe, tâches du jour de DALLAS. */
 const entretienDemo: ProduitEntretien[] = [
   { id: "pe1", nom: "Détergent désinfectant surfaces", usage: "Plans de travail, ustensiles, frigos", dilution: "Prêt à l'emploi", temps_contact: "5 min", ft: "demo/s1.webp", fds: "demo/s2.webp", actif: true },
@@ -180,6 +228,22 @@ export const demoApi: Api = {
     produitsDemo.unshift({ id: `pr${produitsDemo.length + 1}`, nom: nom.trim(), fournisseur: fournisseurId ? "Fournisseur" : null,
       consigne: consigne.trim() || null, sortie_le: new Date().toISOString().slice(0, 10), actif: true, inv: [] });
   },
+  planAction: () => attendre(planActionDemo()),
+  etatControles: (site) => attendre(etatControlesDemo(site === "s1" ? "s3" : site)),
+  etatMetrologie: () => attendre(etatMetrologieDemo()),
+  ajouterAppareil: async (_p, nom, type, numero) => {
+    if (nom.trim().length < 2) throw new Error("Nom obligatoire");
+    appareilsDemo.push({ id: `am${appareilsDemo.length + 1}`, nom: nom.trim(), type, numero: numero.trim() || null, hors_service: false, dernier: null });
+  },
+  pmsGroupe: () => attendre(SITES_DEMO.map(([nom], k) => ({ site_id: `s${k}`, restaurant: nom,
+    controles: k === 3 ? etatControlesDemo("s3") : etatControlesDemo(`s${k}`).map((c, i) => (k % 3 === 0 || i > 2 ? c : { ...c, etat: "a_jour" as const, prochaine: jourDemo(40) })),
+    metrologie: k === 3 ? etatMetrologieDemo() : [],
+    actions_ouvertes: k === 3 ? anomalies.filter((a) => a.statut !== "verifiee").length : k % 4, actions_en_retard: k === 3 ? 1 : k % 5 === 0 ? 1 : 0, actions_sans_plan: k % 2 }))),
+  modelesControles: () => attendre(modelesDemo.map((x) => ({ ...x }))),
+  siegePlanifierAction: async (id, action, echeance, resp) => { const a = anomalies.find((x) => x.id === id); if (a) Object.assign(a, { action_prevue: action, echeance, responsable_id: resp }); },
+  siegeEnregistrerControle: async (site, modele, date, conforme, observation, prestataire, document) => {
+    controlesFaitsDemo.push({ site, modele, date, conforme, observation: observation || null, prestataire: prestataire || null, photo: null, document: document ? "demo/s2.webp" : null, par: "Siège" });
+  },
   nettoyageDuJour: () => attendre(tachesNettoyageDemo()),
   produitsEntretien: () => attendre(entretienDemo.map((x) => ({ ...x }))),
   planNettoyage: () => attendre(planDemo.map((x) => ({ ...x }))),
@@ -217,8 +281,8 @@ export const demoApi: Api = {
   },
   siegeEnregistrer: async (table, ligne) => {
     const l = ligne as Record<string, unknown> & { id?: string; site_id?: string };
-    if (table === "nettoyage_elements" || table === "produits_entretien") {
-      const lst = (table === "nettoyage_elements" ? planDemo : entretienDemo) as unknown as Record<string, unknown>[];
+    if (table === "nettoyage_elements" || table === "produits_entretien" || table === "controles_modeles") {
+      const lst = (table === "nettoyage_elements" ? planDemo : table === "controles_modeles" ? modelesDemo : entretienDemo) as unknown as Record<string, unknown>[];
       if (l.id) Object.assign(lst.find((x) => x.id === l.id) ?? {}, l); else lst.push({ ...l, id: `n${++gestion.n}` });
       return;
     }
@@ -430,6 +494,31 @@ export const demoApi: Api = {
           decision: op.decision ?? null, transfert_vers: op.transfert_vers ?? null, par: op.par_nom ?? "", at: op.at_client });
         break;
       }
+      case "controle_fait": {
+        if (!nouveau(op.id)) break;
+        controlesFaitsDemo.push({ site: "s3", modele: op.modele_id, date: op.date_realisation, conforme: op.conforme, observation: op.observation ?? null,
+          prestataire: op.prestataire ?? null, photo: op.photo ?? null, document: null, par: op.par_nom });
+        const m = modelesDemo.find((x) => x.id === op.modele_id);
+        if (!op.conforme && m) anomalies.unshift({ id: `ac-${op.id}`, titre: `${m.titre} : ${op.observation}`, categorie: m.rubrique === "nuisibles" ? "Nuisibles" : "Entretien technique",
+          gravite: "majeure", statut: "ouverte", cree_at: op.at_client, source: "controle", photo: op.photo });
+        break;
+      }
+      case "verification_mesure": {
+        if (!nouveau(op.id)) break;
+        const a = appareilsDemo.find((x) => x.id === op.appareil_id);
+        if (!a) break;
+        const conforme = op.methode === "certificat" ? op.conforme : lectureConforme(op.methode, op.valeur ?? NaN);
+        a.dernier = { date: op.at_client.slice(0, 10), methode: op.methode, valeur: op.valeur ?? null, conforme, photo: op.photo, document: null, par: op.par_nom };
+        a.hors_service = !conforme;
+        if (!conforme) anomalies.unshift({ id: `am-${op.id}`, titre: `Appareil hors tolérance : ${a.nom}${op.valeur !== undefined ? ` (lu ${op.valeur} °C)` : ""}`,
+          categorie: "Métrologie", gravite: "majeure", statut: "ouverte", cree_at: op.at_client, source: "metrologie" });
+        break;
+      }
+      case "action_planifiee": {
+        const a = anomalies.find((x) => x.id === op.anomalie_id);
+        if (a) Object.assign(a, { action_prevue: op.action, echeance: op.echeance, responsable_id: op.responsable_id });
+        break;
+      }
       case "nettoyage_fait": {
         const cleFait = `${op.tache_id}:${op.element_id}`;
         if (!faitsDemo.has(cleFait)) faitsDemo.set(cleFait, { par: op.par_nom, at: op.at_client, photo: op.photo ?? null });
@@ -454,8 +543,10 @@ export const demoApi: Api = {
         const role = profils.find((p) => p.id === op.par)?.role ?? "equipe";
         if (!a) break;
         if (a.statut === op.statut) break;                       // déjà fait (envoi rejoué)
-        if (!transitionPermise(a.statut, op.statut, role)) throw new ErreurDefinitive("Changement de statut non autorisé");
+        if (!transitionPermise(a.statut, op.statut, role, a.gravite)) throw new ErreurDefinitive("Changement de statut non autorisé");
         a.statut = op.statut;
+        if (op.preuve) a.preuve = op.preuve;
+        if (op.commentaire) a.traitee_commentaire = op.commentaire;
         break;
       }
     }

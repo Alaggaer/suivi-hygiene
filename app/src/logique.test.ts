@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   BORNES_HUILE, bornesReleve, temperaturesDemandees, trierFournisseurs, verdictLivraison, cheminPhoto, dansBornes, etatAvecEnAttente, etatTache, jourHuile, MIN, niveauAgeHuile, niveauEscalade, niveauHuile, service, tachesALheure,
-  temperatureConforme, temperaturesLivraisonOk, trierTaches,
+  temperatureConforme, temperaturesLivraisonOk, trierTaches, lectureConforme, actionEnRetard,
 } from "./logique";
 
 const T0 = Date.parse("2026-11-20T10:00:00Z"); // 11:00 à Paris
@@ -177,5 +177,28 @@ describe("réception de livraison", () => {
     const samedi = new Date("2026-11-21T09:00:00");
     const l = trierFournisseurs([{ nom: "B", jours: [1] }, { nom: "A", jours: [] }, { nom: "C", jours: [6] }], samedi);
     expect(l.map((f) => `${f.nom}${f.attendu ? "*" : ""}`)).toEqual(["C*", "A", "B"]);
+  });
+});
+
+describe("Espace PMS", () => {
+  it("clôture : mineure par le chef ou le responsable, majeure par le siège seulement", () => {
+    expect(transitionPermise("traitee", "verifiee", "chef", "mineure")).toBe(true);
+    expect(transitionPermise("traitee", "verifiee", "responsable", "mineure")).toBe(true);
+    expect(transitionPermise("traitee", "verifiee", "equipe", "mineure")).toBe(false);
+    expect(transitionPermise("traitee", "verifiee", "responsable", "majeure")).toBe(false);
+    expect(transitionPermise("traitee", "verifiee", "chef", "critique")).toBe(false);
+    expect(transitionPermise("traitee", "verifiee", "siege", "critique")).toBe(true);
+  });
+  it("sondes : tolérances glace fondante et eau bouillante", () => {
+    expect(lectureConforme("glace", 0.5)).toBe(true);
+    expect(lectureConforme("glace", -0.6)).toBe(false);
+    expect(lectureConforme("ebullition", 99)).toBe(true);
+    expect(lectureConforme("ebullition", 101.5)).toBe(false);
+  });
+  it("action en retard : échéance passée et pas encore corrigée", () => {
+    expect(actionEnRetard({ statut: "ouverte", echeance: "2026-11-20" }, "2026-11-22")).toBe(true);
+    expect(actionEnRetard({ statut: "ouverte", echeance: "2026-11-22" }, "2026-11-22")).toBe(false);
+    expect(actionEnRetard({ statut: "traitee", echeance: "2026-11-20" }, "2026-11-22")).toBe(false);
+    expect(actionEnRetard({ statut: "ouverte", echeance: null }, "2026-11-22")).toBe(false);
   });
 });

@@ -14,6 +14,7 @@ import { Livraison } from "./screens/Livraison";
 import { StocksMorts } from "./screens/StocksMorts";
 import { AlertesProduit, avecEnAttente } from "./screens/AlertesProduit";
 import { Nettoyage, ProduitsEntretien } from "./screens/Nettoyage";
+import { EspacePms } from "./screens/EspacePms";
 import { prechargerFiches } from "./fiches";
 import { useRangerLivraison } from "./rangement";
 import { Produit } from "./screens/Produit";
@@ -22,7 +23,7 @@ import { minuteurConforme } from "./logique";
 
 type Ecran =
   | { nom: "accueil" } | { nom: "releves"; tache?: Tache } | { nom: "huile"; tache?: Tache }
-  | { nom: "anomalies" } | { nom: "stocks" } | { nom: "alertes" } | { nom: "produits_entretien" } | { nom: "nettoyage"; tache: Tache } | { nom: "livraison" } | { nom: "produit" } | { nom: "minuteur" }
+  | { nom: "anomalies" } | { nom: "stocks" } | { nom: "alertes" } | { nom: "produits_entretien" } | { nom: "pms" } | { nom: "nettoyage"; tache: Tache } | { nom: "livraison" } | { nom: "produit" } | { nom: "minuteur" }
   | { nom: "signaler"; categorie?: string } | { nom: "tache"; tache: Tache };
 
 /** Les saisies pas encore envoyées s'affichent tout de suite : tâche cochée, anomalie listée. */
@@ -137,6 +138,7 @@ export default function App({ api, file }: { api: Api; file: FileEnvoi }) {
   else if (ecran.nom === "signaler") corps = <Signaler onFini={retour} categorie={ecran.categorie} />;
   else if (ecran.nom === "tache") corps = <TacheSimple tache={ecran.tache} onFini={retour} onProbleme={() => setEcran({ nom: "signaler", categorie: "Propreté" })} />;
   else if (ecran.nom === "nettoyage") corps = <Nettoyage tache={ecran.tache} enAttente={entrees} onFini={retour} onProduits={() => setEcran({ nom: "produits_entretien" })} />;
+  else if (ecran.nom === "pms") corps = <EspacePms onFini={retour} />;
   else if (ecran.nom === "produits_entretien") corps = <ProduitsEntretien onFini={retour} />;
   else if (ecran.nom === "alertes") corps = <AlertesProduit onFini={retour} enAttente={entrees} />;
   else if (ecran.nom === "stocks") corps = <StocksMorts onFini={retour} enAttente={entrees} />;

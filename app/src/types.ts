@@ -27,6 +27,36 @@ export interface Tache {
 
 /** viande : la question de l'origine est posée ; jours : jours de livraison habituels (1 = lundi … 7 = dimanche). */
 export type ProduitLivre = "frais" | "sec" | "surgele";
+/* ---------- Espace PMS : plan d'action, contrôles, métrologie ---------- */
+export interface ActionPlan {
+  id: string; titre: string; categorie: string; gravite: Gravite; statut: "ouverte" | "traitee" | "verifiee"; source: string;
+  cree_at: string; photo: string | null; action_prevue: string | null; echeance: string | null;
+  responsable_id: string | null; responsable: string | null; preuve: string | null;
+  traitee_at: string | null; traitee_par: string | null; traitee_commentaire: string | null; verifiee_at: string | null; verifiee_par: string | null;
+}
+export type EtatControle = "a_jour" | "bientot" | "retard" | "jamais" | "hors_service";
+export type RubriqueControle = "entretien" | "nuisibles";
+export interface ControleSite {
+  id: string; rubrique: RubriqueControle; titre: string; methode: string | null; periodicite_mois: number;
+  preuve: "aucune" | "photo" | "document"; prestataire: boolean;
+  dernier: { date: string; conforme: boolean; observation: string | null; prestataire: string | null; photo: string | null; document: string | null; par: string | null } | null;
+  prochaine: string | null; etat: EtatControle;
+}
+export interface ModeleControle {
+  id?: string; rubrique: RubriqueControle; titre: string; methode: string | null; periodicite_mois: number;
+  preuve: "aucune" | "photo" | "document"; prestataire: boolean; sites: string[] | null; ordre: number; actif: boolean;
+}
+export type MethodeMesure = "glace" | "ebullition" | "certificat";
+export interface AppareilMesure {
+  id: string; nom: string; type: "sonde" | "infrarouge" | "enregistreur" | "autre"; numero: string | null; hors_service: boolean;
+  dernier: { date: string; methode: MethodeMesure; valeur: number | null; conforme: boolean; photo: string | null; document: string | null; par: string | null } | null;
+  prochaine: string | null; etat: EtatControle;
+}
+export interface PmsGroupe {
+  site_id: string; restaurant: string; controles: ControleSite[]; metrologie: AppareilMesure[];
+  actions_ouvertes: number; actions_en_retard: number; actions_sans_plan: number;
+}
+
 /* ---------- Plan de nettoyage et de désinfection ---------- */
 export interface ProduitEntretien {
   id?: string; nom: string; usage: string | null; dilution: string | null; temps_contact: string | null;
@@ -78,7 +108,7 @@ export interface FriteuseGestion { id?: string; site_id: string; nom: string; li
 export interface ModeleTache { id?: string; site_id: string; type: string; titre: string; heure_limite: string; jours: number[]; actif: boolean }
 export interface FournisseurGestion { id?: string; nom: string; viande: boolean; produits: ProduitLivre[] | null; jours_livraison: number[] | null; actif: boolean }
 export interface Tablette { id: string; email: string; site_id: string; cree_at: string; derniere_connexion: string | null }
-export type TableGestion = "sites" | "enceintes" | "friteuses" | "taches_modeles" | "fournisseurs" | "nettoyage_elements" | "produits_entretien";
+export type TableGestion = "controles_modeles" | "sites" | "enceintes" | "friteuses" | "taches_modeles" | "fournisseurs" | "nettoyage_elements" | "produits_entretien";
 /** Stocks morts : produit sorti de la carte (déclaré par le siège), et où en est ce restaurant. */
 export type EtatStock = "a_verifier" | "a_ecouler" | "solde";
 export type DecisionStock = "jete" | "transfere" | "a_ecouler";
@@ -167,6 +197,16 @@ export interface Api {
   stocksMortsSiege(): Promise<StockMortSiege[]>;
   siegeRetirerProduit(nom: string, fournisseurId: string | null, consigne: string): Promise<void>;
   siegeCloreProduit(id: string): Promise<void>;
+  /* Espace PMS */
+  planAction(siteId: string): Promise<ActionPlan[]>;
+  etatControles(siteId: string): Promise<ControleSite[]>;
+  etatMetrologie(siteId: string): Promise<AppareilMesure[]>;
+  /** En ligne seulement : le chef ou le responsable ajoute une sonde ou un thermomètre. */
+  ajouterAppareil(profilId: string, nom: string, type: AppareilMesure["type"], numero: string): Promise<void>;
+  pmsGroupe(): Promise<PmsGroupe[]>;
+  modelesControles(): Promise<ModeleControle[]>;
+  siegePlanifierAction(anomalieId: string, action: string, echeance: string, responsableId: string | null): Promise<void>;
+  siegeEnregistrerControle(siteId: string, modeleId: string, date: string, conforme: boolean, observation: string, prestataire: string, document: File | null): Promise<void>;
   /* Plan de nettoyage */
   nettoyageDuJour(): Promise<TacheNettoyage[]>;
   produitsEntretien(): Promise<ProduitEntretien[]>;

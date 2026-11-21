@@ -1,5 +1,5 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
-import type { ElementNettoyage, NettoyageSiege, ProduitEntretien, TacheNettoyage, AlerteProduit, AlerteSiege, Anomalie, AnomalieSiege, Api, Correction, Employe, EnceinteGestion, FournisseurGestion, FriteuseGestion, LivraisonJour, ModeleTache, SiteGestion, StockMort, StockMortSiege, Tablette, Enceinte, Friteuse, EtatRestaurant, JourHistorique, Preuves, EtatFriteuse, Fournisseur, FournisseurNC, LigneSiege, SeuilsHuile, Site, Tache } from "../types";
+import type { ActionPlan, AppareilMesure, ControleSite, ModeleControle, PmsGroupe, ElementNettoyage, NettoyageSiege, ProduitEntretien, TacheNettoyage, AlerteProduit, AlerteSiege, Anomalie, AnomalieSiege, Api, Correction, Employe, EnceinteGestion, FournisseurGestion, FriteuseGestion, LivraisonJour, ModeleTache, SiteGestion, StockMort, StockMortSiege, Tablette, Enceinte, Friteuse, EtatRestaurant, JourHistorique, Preuves, EtatFriteuse, Fournisseur, FournisseurNC, LigneSiege, SeuilsHuile, Site, Tache } from "../types";
 import { ErreurDefinitive, type Operation } from "../operations";
 
 /**
@@ -134,6 +134,26 @@ export function supabaseApi(url: string, cleAnon: string): Api {
       return (ok(await sb.from("fournisseurs").select("id, nom, viande, jours_livraison, produits").eq("actif", true).order("nom")) as (Fournisseur & { jours_livraison: number[] | null })[])
         .map((f) => ({ id: f.id, nom: f.nom, viande: f.viande, jours: f.jours_livraison, produits: f.produits }));
     },
+    async planAction(siteId) { return ok(await sb.rpc("plan_action", { p_site: siteId })) as ActionPlan[]; },
+    async etatControles(siteId) { return ok(await sb.rpc("etat_controles", { p_site: siteId })) as ControleSite[]; },
+    async etatMetrologie(siteId) {
+      return (ok(await sb.rpc("etat_metrologie", { p_site: siteId })) as AppareilMesure[])
+        .map((a) => ({ ...a, dernier: a.dernier && { ...a.dernier, valeur: a.dernier.valeur === null ? null : Number(a.dernier.valeur) } }));
+    },
+    async ajouterAppareil(profilId, nom, type, numero) { verifier(await sb.rpc("ajouter_appareil", { p_profil: profilId, p_nom: nom, p_type: type, p_numero: numero })); },
+    async pmsGroupe() { return ok(await sb.rpc("pms_groupe")) as PmsGroupe[]; },
+    async modelesControles() {
+      return ok(await sb.from("controles_modeles").select("id, rubrique, titre, methode, periodicite_mois, preuve, prestataire, sites, ordre, actif")
+        .order("rubrique").order("ordre")) as ModeleControle[];
+    },
+    async siegePlanifierAction(anomalieId, action, echeance, responsableId) {
+      verifier(await sb.rpc("planifier_action", { p_anomalie: anomalieId, p_profil: null, p_action: action, p_echeance: echeance, p_responsable: responsableId }));
+    },
+    async siegeEnregistrerControle(siteId, modeleId, date, conforme, observation, prestataire, document) {
+      const chemin = document ? await this.siegeDeposerDocument(document) : null;
+      verifier(await sb.rpc("siege_enregistrer_controle", { p_site: siteId, p_modele: modeleId, p_date: date, p_conforme: conforme,
+        p_observation: observation, p_prestataire: prestataire, p_document: chemin }));
+    },
     async nettoyageDuJour() { return ok(await sb.rpc("nettoyage_du_jour")) as TacheNettoyage[]; },
     async produitsEntretien() { return ok(await sb.from("produits_entretien").select("id, nom, usage, dilution, temps_contact, ft, fds, actif").order("nom")) as ProduitEntretien[]; },
     async planNettoyage() {
@@ -258,6 +278,10 @@ export function supabaseApi(url: string, cleAnon: string): Api {
           }]);
           break;
         case "anomalie_statut":
+          if (op.preuve) {
+            verifier(await sb.rpc("traiter_action", { p_anomalie: op.anomalie_id, p_profil: op.par, p_commentaire: op.commentaire ?? null, p_preuve: op.preuve, p_at_client: op.at_client }));
+            break;
+          }
           verifier(await sb.rpc("changer_statut_anomalie", {
             p_anomalie: op.anomalie_id, p_statut: op.statut, p_profil: op.par, p_commentaire: op.commentaire ?? null, p_at_client: op.at_client,
           }));
@@ -265,6 +289,17 @@ export function supabaseApi(url: string, cleAnon: string): Api {
         case "stock_mort":
           await inserer("inventaires_stock", [{ id: op.id, ...commun, produit_id: op.produit_id, reste: op.reste, quantite: op.quantite ?? null,
             dlc: op.dlc ?? null, photo: op.photo ?? null, decision: op.decision ?? null, transfert_vers: op.transfert_vers ?? null }]);
+          break;
+        case "controle_fait":
+          await inserer("controles_faits", [{ id: op.id, ...commun, modele_id: op.modele_id, date_realisation: op.date_realisation, conforme: op.conforme,
+            observation: op.observation ?? null, prestataire: op.prestataire ?? null, photo: op.photo ?? null }]);
+          break;
+        case "verification_mesure":
+          await inserer("verifications_mesure", [{ id: op.id, ...commun, appareil_id: op.appareil_id, methode: op.methode, valeur: op.valeur ?? null,
+            conforme: op.conforme, photo: op.photo }]);
+          break;
+        case "action_planifiee":
+          verifier(await sb.rpc("planifier_action", { p_anomalie: op.anomalie_id, p_profil: op.par, p_action: op.action, p_echeance: op.echeance, p_responsable: op.responsable_id }));
           break;
         case "nettoyage_fait":
           await inserer("nettoyages_faits", [{ id: op.id, ...commun, tache_id: op.tache_id, element_id: op.element_id, photo: op.photo ?? null }]);

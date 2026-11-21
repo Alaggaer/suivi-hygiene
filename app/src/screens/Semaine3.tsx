@@ -124,7 +124,7 @@ export function Anomalies({ anomalies, onRetour }: { anomalies: Anomalie[]; onRe
     <div className="screen">
       <button className="back" onClick={onRetour}>← Retour</button>
       <h1>Anomalies du site</h1>
-      <p className="hint">Ouverte → Traitée → Vérifiée par le chef. Majeure non traitée sous 24 h, mineure sous 72 h : le siège est prévenu.</p>
+      <p className="hint">Ouverte → Traitée → Close (mineure : par le chef ; majeure ou critique : par le siège). Majeure non traitée sous 24 h, mineure sous 72 h : le siège est prévenu.</p>
       <div className="rows">
         {anomalies.length === 0 && <p className="hint">Aucune anomalie ouverte.</p>}
         {anomalies.map((a) => (
@@ -135,8 +135,8 @@ export function Anomalies({ anomalies, onRetour }: { anomalies: Anomalie[]; onRe
               <span className={`pill ${a.statut === "ouverte" ? "bad" : "warn"}`}>{a.statut === "ouverte" ? "Ouverte" : "Traitée"}</span>
               {a.enAttente && <span className="pill none">En attente d'envoi</span>}
               {transitionPermise(a.statut, "traitee", profil.role) && <button className="opt" onClick={() => { setTraiter(a); setCom(""); }}>Marquer traitée</button>}
-              {transitionPermise(a.statut, "verifiee", profil.role) && <button className="opt" onClick={() => changer(a, "verifiee")}>Vérifiée (clôturer)</button>}
-              {a.statut === "traitee" && profil.role === "equipe" && <span className="hint" style={{ fontSize: 14 }}>À vérifier par le chef</span>}
+              {transitionPermise(a.statut, "verifiee", profil.role, a.gravite) && <button className="opt" onClick={() => changer(a, "verifiee")}>Vérifiée (clôturer)</button>}
+              {a.statut === "traitee" && !transitionPermise(a.statut, "verifiee", profil.role, a.gravite) && <span className="hint" style={{ fontSize: 14 }}>{a.gravite === "mineure" ? "À clore par le chef" : "À valider par le siège"}</span>}
             </span>
           </div>
         ))}

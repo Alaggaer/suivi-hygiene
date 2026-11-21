@@ -1,3 +1,4 @@
+import { PmsSiege } from "./PmsSiege";
 import { NettoyageSiegeVue } from "./NettoyageSiege";
 import { AlertesSiege } from "./AlertesSiege";
 import { Gestion } from "./Gestion";
@@ -11,7 +12,7 @@ import { BORNES_HUILE, bornesReleve, dansBornes, depuis, indicateursRestaurant, 
  * - fiche restaurant : à traiter, la journée, températures, huile, livraisons, traçabilité, 30 jours ; imprimable en PDF ;
  * - anomalies à vérifier de tout le groupe.
  */
-type Vue = { nom: "accueil" } | { nom: "resto"; id: string } | { nom: "anomalies" } | { nom: "stocks" } | { nom: "gestion" } | { nom: "alertes" } | { nom: "nettoyage" };
+type Vue = { nom: "accueil" } | { nom: "resto"; id: string } | { nom: "anomalies" } | { nom: "stocks" } | { nom: "gestion" } | { nom: "alertes" } | { nom: "nettoyage" } | { nom: "pms" };
 
 const NIV: Record<NiveauResto, { libelle: string; cls: string }> = {
   rouge: { libelle: "À surveiller", cls: "bad" }, orange: { libelle: "Attention", cls: "warn" }, vert: { libelle: "RAS", cls: "ok" },
@@ -57,6 +58,7 @@ export function TableauSiege({ api }: { api: Api }) {
       <div className="s3-barre">
         {vue.nom !== "accueil" && <button className="s3-retour" onClick={() => setVue({ nom: "accueil" })}>← Tous les restaurants</button>}
         <span className="s3-date">{new Date().toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long", timeZone: "Europe/Paris" })}</span>
+        <button className="s3-retour" onClick={() => setVue({ nom: "pms" })}>PMS</button>
         <button className="s3-retour" onClick={() => setVue({ nom: "nettoyage" })}>Nettoyage</button>
         <button className="s3-retour" onClick={() => setVue({ nom: "alertes" })}>Alertes produit</button>
         <button className="s3-retour" onClick={() => setVue({ nom: "stocks" })}>Stocks morts</button>
@@ -70,6 +72,7 @@ export function TableauSiege({ api }: { api: Api }) {
         <Fiche api={api} etat={tries.find((e) => e.site_id === vue.id)!} anomalies={anomalies.filter((a) => a.site_id === vue.id)}
           onChange={charger} maintenant={maintenant} />
       )}
+      {vue.nom === "pms" && <PmsSiege api={api} />}
       {vue.nom === "nettoyage" && <NettoyageSiegeVue api={api} onOuvrir={(id) => setVue({ nom: "resto", id })} />}
       {vue.nom === "alertes" && <AlertesSiege api={api} onOuvrir={(id) => setVue({ nom: "resto", id })} />}
       {vue.nom === "gestion" && <Gestion api={api} />}

@@ -10,7 +10,7 @@ const SOUS: Record<string, string> = {
 
 export function Accueil({ taches, anomalies, stocksAFaire = 0, alertes = [], onTache, onAller }: {
   taches: Tache[]; anomalies: Anomalie[]; stocksAFaire?: number; alertes?: AlerteProduit[];
-  onTache: (t: Tache) => void; onAller: (ecran: "releves" | "huile" | "anomalies" | "stocks" | "alertes" | "produits_entretien" | "livraison" | "produit" | "minuteur" | "signaler") => void;
+  onTache: (t: Tache) => void; onAller: (ecran: "releves" | "huile" | "anomalies" | "stocks" | "alertes" | "produits_entretien" | "pms" | "livraison" | "produit" | "minuteur" | "signaler") => void;
 }) {
   const maintenant = useMaintenant(1000);
   const liste = trierTaches(taches, maintenant);
@@ -70,6 +70,7 @@ export function Accueil({ taches, anomalies, stocksAFaire = 0, alertes = [], onT
           <button className="act petit" onClick={() => onAller("anomalies")}>
             <b>Anomalies du site</b>{anomalies.length > 0 && <span className="badge">{anomalies.length}</span>}
           </button>
+          <button className="act petit" onClick={() => onAller("pms")}><b>Espace PMS</b></button>
           <button className="act petit" onClick={() => onAller("produits_entretien")}><b>Produits d'entretien</b></button>
           <button className="act petit discret" onClick={() => onAller("releves")}><b>Température hors planning</b></button>
         </div>

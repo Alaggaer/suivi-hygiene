@@ -459,3 +459,16 @@ tr.corrigee td{background:#fbf7ec}
 .pn-form-prod .champ{flex:1 1 160px;margin-top:0;font-size:15px;padding:8px 10px}
 .pn-docs{display:flex;gap:16px;flex-wrap:wrap}
 .pn-doc{display:inline-flex;gap:8px;align-items:center}
+
+/* ---------- Espace PMS ---------- */
+.pa-carte{display:flex;flex-direction:column;gap:6px;margin:10px 0}
+.pa-carte.verifiee{opacity:.6}
+.pa-carte.hs{border-color:#c62828}
+.pa-tete{display:flex;justify-content:space-between;gap:10px;align-items:flex-start}
+.pa-tete b{font-size:18px}
+.pa-plan{margin:0;font-size:16px}
+.pa-plan.retard{color:#c62828;font-weight:600}
+.opt.sel.bad{background:#c62828;border-color:#c62828;color:#fff}
+.pms-groupe tr.cliquable{cursor:pointer}
+.pms-groupe tr.cliquable:hover td{background:#f6f8fb}
+.pms-nom{margin:8px 0}
