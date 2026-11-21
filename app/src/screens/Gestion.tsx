@@ -1,3 +1,4 @@
+import { ImportTableau } from "./ImportTableau";
 import { useEffect, useState } from "react";
 import type {
   Api, Employe, EnceinteGestion, FournisseurGestion, FriteuseGestion, ModeleTache, ProduitLivre, RoleEmploye, SiteGestion, Tablette,
@@ -8,7 +9,7 @@ import type {
  * enceintes, friteuses, tâches du jour ; et la liste des fournisseurs du groupe.
  * Rien n'est jamais supprimé : on désactive (l'historique reste lisible et signé).
  */
-type Choix = { type: "site"; id: string } | { type: "nouveau" } | { type: "fournisseurs" };
+type Choix = { type: "site"; id: string } | { type: "nouveau" } | { type: "fournisseurs" } | { type: "import" };
 type Onglet = "infos" | "employes" | "enceintes" | "friteuses" | "taches" | "tablette";
 
 const ROLES: { cle: RoleEmploye; libelle: string }[] = [{ cle: "equipe", libelle: "Équipe" }, { cle: "chef", libelle: "Chef" }, { cle: "responsable", libelle: "Responsable de site" }];
@@ -39,11 +40,13 @@ export function Gestion({ api }: { api: Api }) {
             </button>
           ))}
           <button className={`g-item ajout ${choix?.type === "nouveau" ? "sel" : ""}`} onClick={() => setChoix({ type: "nouveau" })}>+ Nouveau restaurant</button>
+          <button className={`g-item ajout ${choix?.type === "import" ? "sel" : ""}`} onClick={() => setChoix({ type: "import" })}>Importer le tableau</button>
           <button className={`g-item ${choix?.type === "fournisseurs" ? "sel" : ""}`} onClick={() => setChoix({ type: "fournisseurs" })}><b>Fournisseurs</b><span>liste du groupe</span></button>
         </nav>
         <div className="g-contenu">
           {choix?.type === "nouveau" && <NouveauRestaurant api={api} onCree={async (id) => { await charger(); setChoix({ type: "site", id }); }} />}
           {choix?.type === "fournisseurs" && <Fournisseurs api={api} />}
+          {choix?.type === "import" && <ImportTableau api={api} onFini={charger} />}
           {site && <FicheGestion key={site.id} api={api} site={site} onSiteModifie={charger} />}
         </div>
       </div>
