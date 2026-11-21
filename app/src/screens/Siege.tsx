@@ -153,6 +153,7 @@ function Fiche({ api, etat, anomalies, onChange, maintenant }: { api: Api; etat:
   const [photo, setPhoto] = useState<string | null>(null);
   const [erreur, setErreur] = useState<string | null>(null);
   const [aCorriger, setACorriger] = useState<ACorriger | null>(null);
+  const [rattraper, setRattraper] = useState<"releve" | "huile" | null>(null);
   const [rev, setRev] = useState(0);
   const id = etat?.site_id;
 
@@ -224,7 +225,8 @@ function Fiche({ api, etat, anomalies, onChange, maintenant }: { api: Api; etat:
             </section>
             <div className="s3-pile">
               <section className="s3-bloc" aria-label="Températures">
-                <h2>Températures <small>{p.releves.length} relevés</small></h2>
+                <h2>Températures <small>{p.releves.length} relevés</small>
+                  <button className="lien ecran-seul s3-oubli" onClick={() => setRattraper("releve")}>+ Relevé oublié</button></h2>
                 {!p.releves.length ? <p className="hint">Aucun relevé ce jour.</p> : (
                   <div className="table-scroll"><table className="tbl"><tbody>{p.releves.map((r, i) => {
                     const v = r.correction ? r.correction.valeur : r.valeur;
@@ -233,7 +235,8 @@ function Fiche({ api, etat, anomalies, onChange, maintenant }: { api: Api; etat:
                       <tr key={i} className={r.correction ? "corrigee" : ""}><td className="num hint">{heure(r.at)}</td><td><b>{r.enceinte}</b></td>
                         <td className={`num ${conforme ? "" : "t-bad"}`}>{r.correction ? <><s>{deg(r.valeur)}</s> <b>{v === null ? "annulé" : deg(v)}</b></> : <b>{deg(r.valeur)}</b>}</td>
                         <td>{conforme ? <span className="hint">max {deg(r.t_max)}</span> : <><span className="pill bad">max {deg(r.t_max)}</span>{r.action && <><br /><span className="hint">{r.action}</span></>}</>}
-                          {r.correction && <><br /><Corr c={r.correction} /></>}</td>
+                          {r.correction && <><br /><Corr c={r.correction} /></>}
+                          {r.rattrapage && <><br /><span className="corr">Saisi après coup par le siège : « {r.rattrapage} »</span></>}</td>
                         <td className="hint">{r.par}</td>
                         <td className="ecran-seul"><button className="lien" onClick={() => setACorriger({ table: "releves", id: r.id, libelle: `${r.enceinte} · ${deg(r.valeur)} à ${heure(r.at)}`, unite: "°C", bornes: bornesReleve(r.t_max) })}>Corriger</button></td></tr>
                     );
@@ -241,7 +244,7 @@ function Fiche({ api, etat, anomalies, onChange, maintenant }: { api: Api; etat:
                 )}
               </section>
               <section className="s3-bloc" aria-label="Huile">
-                <h2>Huile</h2>
+                <h2>Huile <button className="lien ecran-seul s3-oubli" onClick={() => setRattraper("huile")}>+ Mesure oubliée</button></h2>
                 {!p.huiles.length ? <p className="hint">Aucune mesure ce jour.</p> : (
                   <div className="s3-friteuses">{p.huiles.map((h, i) => {
                     const v = h.correction ? h.correction.valeur : h.polaires, cls = h.non_utilisee ? "none" : v === null ? "none" : v >= 25 ? "bad" : v >= 20 ? "warn" : "ok";
@@ -250,6 +253,7 @@ function Fiche({ api, etat, anomalies, onChange, maintenant }: { api: Api; etat:
                         <div className="s3-friteuse-tete"><b>{h.friteuse}</b><b className={cls === "bad" || cls === "warn" ? `t-${cls}` : ""}>{h.non_utilisee ? "—" : v === null ? "—" : `${v.toLocaleString("fr-FR")} %`}</b></div>
                         <div className="s3-jauge"><span className={cls} style={{ width: `${Math.min(100, ((v ?? 0) / 25) * 100)}%` }} /></div>
                         <div className="hint">{h.non_utilisee ? "non utilisée" : [h.filtrage && "filtrée", h.changement && "huile changée"].filter(Boolean).join(" · ") || "mesurée"} · {heure(h.at)} · {h.par}</div>
+                        {h.rattrapage && <div className="corr">Saisie après coup par le siège : « {h.rattrapage} »</div>}
                         {h.correction && <div><s className="hint">{h.polaires === null ? "—" : `${h.polaires.toLocaleString("fr-FR")} %`}</s> <Corr c={h.correction} /></div>}
                         {!h.non_utilisee && <button className="lien ecran-seul" onClick={() => setACorriger({ table: "huiles", id: h.id, libelle: `${h.friteuse} · ${h.polaires ?? "—"} % à ${heure(h.at)}`, unite: "%", bornes: BORNES_HUILE })}>Corriger</button>}
                       </div>
@@ -310,6 +314,8 @@ function Fiche({ api, etat, anomalies, onChange, maintenant }: { api: Api; etat:
       )}
 
       {hist.length > 0 && <Tendance hist={hist} />}
+      {rattraper && <FormRattrapage api={api} siteId={etat.site_id} type={rattraper} jour={jour}
+        onFermer={() => setRattraper(null)} onFait={() => { setRattraper(null); setRev((x) => x + 1); onChange(); }} />}
       {aCorriger && <FormCorrection api={api} cible={aCorriger} onFermer={() => setACorriger(null)} onFait={() => { setACorriger(null); setRev((x) => x + 1); onChange(); }} />}
 
       {photo && (
@@ -457,6 +463,97 @@ function FormCorrection({ api, cible, onFermer, onFait }: { api: Api; cible: ACo
         <div className="carte-actions">
           <button className="opt" onClick={onFermer}>Annuler</button>
           <button className="s3-verifier" disabled={!possible} onClick={valider}>{envoi ? "Enregistrement…" : "Enregistrer la correction"}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ---------- Rattrapage : saisie oubliée, ajoutée après coup par le siège ---------- */
+
+const ACTIONS_RELEVE = ["Thermostat réglé", "Porte mal fermée, refermée", "Denrées déplacées", "Denrées jetées", "Technicien appelé"];
+const MOTIFS_OUBLI = ["Relevé fait sur papier, pas sur la tablette", "Tablette en panne ou déchargée", "Oubli de saisie, valeur connue"];
+
+function FormRattrapage({ api, siteId, type, jour, onFermer, onFait }: {
+  api: Api; siteId: string; type: "releve" | "huile"; jour: string; onFermer: () => void; onFait: () => void;
+}) {
+  const [eq, setEq] = useState<{ id: string; nom: string; t_max?: number }[]>([]);
+  const [equipement, setEquipement] = useState("");
+  const [heureSaisie, setHeureSaisie] = useState("");
+  const [valeur, setValeur] = useState("");
+  const [action, setAction] = useState<string | null>(null);
+  const [decision, setDecision] = useState<"filtree" | "changee" | null>(null);
+  const [motif, setMotif] = useState("");
+  const [envoi, setEnvoi] = useState(false);
+  const [erreur, setErreur] = useState<string | null>(null);
+
+  useEffect(() => {
+    api.equipementsSite(siteId).then((r) => {
+      const l = type === "releve" ? r.enceintes : r.friteuses;
+      setEq(l); setEquipement(l[0]?.id ?? "");
+    }).catch((e) => setErreur((e as Error).message));
+  }, [api, siteId, type]);
+
+  const choisi = eq.find((x) => x.id === equipement);
+  const bornes = type === "releve" ? (choisi?.t_max !== undefined ? bornesReleve(choisi.t_max) : null) : BORNES_HUILE;
+  const v = valeur.trim() === "" ? null : Number(valeur.replace(",", "."));
+  const valeurKo = v === null || Number.isNaN(v) || (bornes !== null && !dansBornes(v, bornes));
+  const at = heureSaisie ? new Date(`${jour}T${heureSaisie}:00`) : null;
+  const futur = !!at && at.getTime() > Date.now();
+  const horsSeuil = type === "releve" && v !== null && choisi?.t_max !== undefined && v > choisi.t_max;
+  const rouge = type === "huile" && v !== null && v >= 25;
+  const decisionOk = type === "releve" ? (!horsSeuil || !!action) : (decision === "changee" || (decision === "filtree" && !rouge));
+  const possible = !!equipement && !!at && !futur && !valeurKo && decisionOk && motif.trim().length >= 5 && !envoi;
+
+  async function valider() {
+    setEnvoi(true); setErreur(null);
+    try {
+      await api.siegeRattraper(type === "releve"
+        ? { type, equipement, at: at!.toISOString(), valeur: v!, motif: motif.trim(), action: horsSeuil ? action : null }
+        : { type, equipement, at: at!.toISOString(), valeur: v!, motif: motif.trim(), decision: decision! });
+      onFait();
+    } catch (e) { setErreur((e as Error).message); setEnvoi(false); }
+  }
+
+  return (
+    <div id="sheet" className="open" role="dialog" aria-modal="true" aria-label="Saisie oubliée" onClick={(e) => e.target === e.currentTarget && onFermer()}>
+      <div className="pad correction">
+        <h3>{type === "releve" ? "Relevé oublié" : "Mesure d'huile oubliée"} · {jourLong(jour)}</h3>
+        <p className="hint">Elle sera enregistrée à l'heure indiquée, signalée « saisie après coup par le siège » avec votre nom et le motif. La tâche manquée reste manquée.</p>
+        <label className="champ-bloc">{type === "releve" ? "Enceinte" : "Friteuse"}
+          <select className="champ" value={equipement} onChange={(e) => { setEquipement(e.target.value); setAction(null); }}>
+            {eq.map((x) => <option key={x.id} value={x.id}>{x.nom}{x.t_max !== undefined ? ` (max ${deg(x.t_max)})` : ""}</option>)}
+          </select>
+        </label>
+        <label className="champ-bloc">Heure à laquelle elle a été faite
+          <input className="champ" type="time" value={heureSaisie} onChange={(e) => setHeureSaisie(e.target.value)} />
+          {futur && <span className="t-bad">Cette heure n'est pas encore passée.</span>}
+        </label>
+        <label className="champ-bloc">{type === "releve" ? "Température (°C)" : "Composés polaires (%)"}
+          <input className="champ" inputMode="decimal" value={valeur} onChange={(e) => setValeur(e.target.value)} />
+          {v !== null && valeurKo && <span className="t-bad">{bornes?.message ?? "Valeur invalide."}</span>}
+        </label>
+        {horsSeuil && (
+          <div className="champ-bloc">Hors seuil : action corrective faite à l'époque (obligatoire)
+            <span className="opts">{ACTIONS_RELEVE.map((x) => <button key={x} type="button" className={`opt ${action === x ? "sel" : ""}`} onClick={() => setAction(x)}>{x}</button>)}</span>
+          </div>
+        )}
+        {type === "huile" && (
+          <div className="champ-bloc">Huile filtrée ou changée ? (obligatoire)
+            <span className="opts">
+              {!rouge && <button type="button" className={`opt ${decision === "filtree" ? "sel" : ""}`} onClick={() => setDecision("filtree")}>Huile filtrée</button>}
+              <button type="button" className={`opt ${decision === "changee" ? "sel" : ""}`} onClick={() => setDecision("changee")}>Huile changée</button>
+            </span>
+          </div>
+        )}
+        <label className="champ-bloc">Motif (obligatoire)
+          <span className="opts">{MOTIFS_OUBLI.map((m) => <button key={m} type="button" className={`opt ${motif === m ? "sel" : ""}`} onClick={() => setMotif(m)}>{m}</button>)}</span>
+          <input className="champ" value={motif} onChange={(e) => setMotif(e.target.value)} placeholder="Ou écrivez le motif" />
+        </label>
+        {erreur && <p className="pill bad">{erreur}</p>}
+        <div className="carte-actions">
+          <button className="opt" onClick={onFermer}>Annuler</button>
+          <button className="s3-verifier" disabled={!possible} onClick={valider}>{envoi ? "Enregistrement…" : "Enregistrer la saisie oubliée"}</button>
         </div>
       </div>
     </div>

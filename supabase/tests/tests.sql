@@ -218,6 +218,30 @@ do $$ declare r uuid; j jsonb; n int; begin
 end $$;
 update auth.claims set jwt = '{"app_metadata":{"role":"siege"}}';
 
+-- rattrapage d'une saisie oubliée par le siège
+update auth.claims set jwt = '{"sub":"00000000-0000-0000-0000-0000000000c1","app_metadata":{"role":"siege"}}';
+do $$ declare enc uuid; r uuid; j jsonb; begin
+  select id into enc from enceintes where site_id = '00000000-0000-0000-0000-000000000001' limit 1;
+  begin perform siege_rattraper('releve', enc, now() + interval '1 hour', 3, 'Relevé oublié, valeur notée sur papier');
+    raise exception 'ÉCHEC : rattrapage dans le futur accepté';
+  exception when invalid_parameter_value then null; end;
+  begin perform siege_rattraper('releve', enc, now() - interval '3 hours', 12, 'Relevé oublié, valeur notée sur papier');
+    raise exception 'ÉCHEC : hors seuil sans action accepté';
+  exception when invalid_parameter_value then null; end;
+  begin perform siege_rattraper('releve', enc, now() - interval '3 hours', 3, 'oups');
+    raise exception 'ÉCHEC : motif trop court accepté';
+  exception when invalid_parameter_value then null; end;
+  r := siege_rattraper('releve', enc, now() - interval '3 hours', 1.5, 'Relevé oublié, valeur notée sur papier');
+  j := preuves_jour('00000000-0000-0000-0000-000000000001', ((now() - interval '3 hours') at time zone 'Europe/Paris')::date);
+  assert (select x->>'rattrapage' from jsonb_array_elements(j->'releves') x where x->>'id' = r::text) = 'Relevé oublié, valeur notée sur papier', 'rattrapage visible dans les preuves';
+  assert (select x->>'par' from jsonb_array_elements(j->'releves') x where x->>'id' = r::text) = 'Siège (direction)', 'auteur = siège';
+  begin perform siege_rattraper('huile', '00000000-0000-0000-0000-0000000000b1', now() - interval '2 hours', 27, 'Mesure oubliée ce midi', null, 'filtree');
+    raise exception 'ÉCHEC : huile au rouge « filtrée » acceptée';
+  exception when invalid_parameter_value then null; end;
+  perform siege_rattraper('huile', '00000000-0000-0000-0000-0000000000b1', now() - interval '2 hours', 18, 'Mesure oubliée ce midi', null, 'filtree');
+end $$;
+update auth.claims set jwt = '{"app_metadata":{"role":"siege"}}';
+
 -- règles d'accès : une tablette ne voit que son site
 create role tablette in role authenticated; grant usage on schema public, auth to tablette; grant select, insert, update on all tables in schema public to tablette;
 grant select on auth.claims to tablette; grant execute on all functions in schema auth to tablette;
@@ -284,6 +308,10 @@ do $$ declare i int; begin
   begin
     perform * from tableau_siege_v2(7);
     raise exception 'ÉCHEC : une tablette lit le tableau v2 du siège';
+  exception when insufficient_privilege then null; end;
+  begin
+    perform siege_rattraper('releve', (select id from enceintes limit 1), now() - interval '1 hour', 3, 'Tentative tablette');
+    raise exception 'ÉCHEC : une tablette fait un rattrapage siège';
   exception when insufficient_privilege then null; end;
   begin
     perform siege_corriger('releves', (select id from releves limit 1), 'Tentative tablette');

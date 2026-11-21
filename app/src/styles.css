@@ -290,3 +290,5 @@ tr.corrigee td{background:#fbf7ec}
 .correction p{margin:0}
 .champ-bloc{display:flex;flex-direction:column;gap:6px;font-weight:700}
 .champ-bloc .opts{display:flex;flex-wrap:wrap;gap:6px;font-weight:400}
+.s3-oubli{font-family:var(--body);font-size:15px;font-weight:700;margin-left:12px}
+.correction{max-height:90vh;overflow:auto}

@@ -61,11 +61,14 @@ export interface AnomalieSiege {
 /** Rattrapage par le siège : la saisie d'origine reste, la correction s'y ajoute (valeur null = saisie annulée). */
 export interface Correction { motif: string; valeur: number | null; par: string; at: string }
 export type TableCorrigeable = "releves" | "huiles" | "livraisons";
+export type Rattrapage =
+  | { type: "releve"; equipement: string; at: string; valeur: number; motif: string; action: string | null }
+  | { type: "huile"; equipement: string; at: string; valeur: number; motif: string; decision: "filtree" | "changee" };
 /** Preuves d'un restaurant pour un jour (ce qu'on montre lors d'un contrôle). */
 export interface Preuves {
   taches: { titre: string; echeance: string; faite_at: string | null; par: string | null }[];
-  releves: { id: string; correction: Correction | null; enceinte: string; valeur: number; t_max: number; conforme: boolean; action: string | null; par: string; at: string }[];
-  huiles: { id: string; correction: Correction | null; friteuse: string; polaires: number | null; filtrage: boolean; changement: boolean; non_utilisee: boolean; par: string; at: string }[];
+  releves: { id: string; correction: Correction | null; rattrapage: string | null; enceinte: string; valeur: number; t_max: number; conforme: boolean; action: string | null; par: string; at: string }[];
+  huiles: { id: string; correction: Correction | null; rattrapage: string | null; friteuse: string; polaires: number | null; filtrage: boolean; changement: boolean; non_utilisee: boolean; par: string; at: string }[];
   livraisons: { id: string; correction: Correction | null; fournisseur: string; t_camion: number; t_frais: number | null; t_surgele: number | null; conforme: boolean; motifs: string[] | null;
     action: string | null; viande: boolean; origine_ok: boolean | null; photo_bl: string; photo_nc: string | null; range_at: string | null; par: string; at: string }[];
   produits: { famille: string; service: string; photo: string; par: string; at: string }[];
@@ -100,6 +103,10 @@ export interface Api {
   preuvesJour(siteId: string, jour: string): Promise<Preuves>;
   /** Le siège corrige une saisie erronée : motif obligatoire, valeur corrigée facultative (absente = saisie annulée). */
   siegeCorriger(table: TableCorrigeable, id: string, motif: string, valeur: number | null): Promise<void>;
+  /** Équipements d'un restaurant (pour le rattrapage siège). */
+  equipementsSite(siteId: string): Promise<{ enceintes: Enceinte[]; friteuses: Friteuse[] }>;
+  /** Le siège saisit après coup un relevé ou une mesure d'huile oubliés (signalé comme tel, motif obligatoire). */
+  siegeRattraper(r: Rattrapage): Promise<void>;
   /** Lien temporaire (1 h) vers une photo du stockage privé. */
   urlPhoto(chemin: string): Promise<string>;
   /** Écritures : appelées uniquement par la file d'envoi, et rejouables sans doublon. */

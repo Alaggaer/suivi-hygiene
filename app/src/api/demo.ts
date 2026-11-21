@@ -1,4 +1,4 @@
-import type { Api, Anomalie, AnomalieSiege, Correction, EtatRestaurant, EtatFriteuse, Preuves, Profil, Tache } from "../types";
+import type { Api, Anomalie, AnomalieSiege, Correction, Rattrapage, EtatRestaurant, EtatFriteuse, Preuves, Profil, Tache } from "../types";
 import { ErreurDefinitive, type Operation } from "../operations";
 import { transitionPermise } from "../logique";
 
@@ -38,6 +38,8 @@ const etatHuile: EtatFriteuse[] = [
   { friteuse_id: "f3", jours_utilisation: 14, dernier_changement: iso(t0 - 16 * JOUR), aujourd_hui_at: null, aujourd_hui_polaires: null, aujourd_hui_non_utilisee: null },
   { friteuse_id: "f4", jours_utilisation: 2, dernier_changement: iso(t0 - 3 * JOUR), aujourd_hui_at: null, aujourd_hui_polaires: null, aujourd_hui_non_utilisee: null },
 ];
+/** Saisies oubliées ajoutées par le siège pendant la démo. */
+const rattrapagesDemo: Rattrapage[] = [];
 /** Corrections faites par le siège pendant la démo (par id de saisie). */
 const correctionsDemo = new Map<string, Correction>();
 /** Anomalies du groupe vues par le siège (démo). */
@@ -124,14 +126,14 @@ export const demoApi: Api = {
         { titre: "Relevé températures du soir", echeance: h("18:00"), faite_at: null, par: null },
       ],
       releves: [
-        { id: "p1", correction: correctionsDemo.get("p1") ?? null, enceinte: "Chambre froide positive", valeur: 2.8, t_max: 3, conforme: true, action: null, par: "Karim", at: h("10:42") },
-        { id: "p2", correction: correctionsDemo.get("p2") ?? null, enceinte: "Chambre froide négative", valeur: -12, t_max: -18, conforme: false, action: "Denrées déplacées dans le congélateur du poste froid", par: "Karim", at: h("10:42") },
-        { id: "p3", correction: correctionsDemo.get("p3") ?? null, enceinte: "Frigo poste chaud", valeur: 3.5, t_max: 4, conforme: true, action: null, par: "Karim", at: h("10:42") },
+        { id: "p1", correction: correctionsDemo.get("p1") ?? null, rattrapage: null, enceinte: "Chambre froide positive", valeur: 2.8, t_max: 3, conforme: true, action: null, par: "Karim", at: h("10:42") },
+        { id: "p2", correction: correctionsDemo.get("p2") ?? null, rattrapage: null, enceinte: "Chambre froide négative", valeur: -12, t_max: -18, conforme: false, action: "Denrées déplacées dans le congélateur du poste froid", par: "Karim", at: h("10:42") },
+        { id: "p3", correction: correctionsDemo.get("p3") ?? null, rattrapage: null, enceinte: "Frigo poste chaud", valeur: 3.5, t_max: 4, conforme: true, action: null, par: "Karim", at: h("10:42") },
       ],
       huiles: [
-        { id: "p4", correction: correctionsDemo.get("p4") ?? null, friteuse: "Friteuse 1", polaires: 14, filtrage: true, changement: false, non_utilisee: false, par: "Julie", at: h("11:51") },
-        { id: "p5", correction: correctionsDemo.get("p5") ?? null, friteuse: "Friteuse 2", polaires: 22, filtrage: false, changement: true, non_utilisee: false, par: "Julie", at: h("11:51") },
-        { id: "p6", correction: correctionsDemo.get("p6") ?? null, friteuse: "Friteuse 3", polaires: null, filtrage: false, changement: false, non_utilisee: true, par: "Julie", at: h("11:52") },
+        { id: "p4", correction: correctionsDemo.get("p4") ?? null, rattrapage: null, friteuse: "Friteuse 1", polaires: 14, filtrage: true, changement: false, non_utilisee: false, par: "Julie", at: h("11:51") },
+        { id: "p5", correction: correctionsDemo.get("p5") ?? null, rattrapage: null, friteuse: "Friteuse 2", polaires: 22, filtrage: false, changement: true, non_utilisee: false, par: "Julie", at: h("11:51") },
+        { id: "p6", correction: correctionsDemo.get("p6") ?? null, rattrapage: null, friteuse: "Friteuse 3", polaires: null, filtrage: false, changement: false, non_utilisee: true, par: "Julie", at: h("11:52") },
       ],
       livraisons: [
         { id: "p7", correction: correctionsDemo.get("p7") ?? null, fournisseur: "Transgourmet", t_camion: 2.5, t_frais: 3.1, t_surgele: -19, conforme: true, motifs: null, action: null, viande: true, origine_ok: true, photo_bl: "demo/bl1.webp", photo_nc: null, range_at: h("08:20"), par: "Mehdi", at: h("07:55") },
@@ -143,11 +145,32 @@ export const demoApi: Api = {
       ],
       anomalies: [{ titre: "Chambre froide négative à −12 °C", gravite: "critique", statut: "ouverte", at: h("10:42") }],
     };
+    // Saisies oubliées ajoutées par le siège ce jour-là
+    const ENC: Record<string, [string, number]> = { e1: ["Chambre froide positive", 3], e2: ["Chambre froide négative", -18], e3: ["Frigo poste chaud", 4] };
+    rattrapagesDemo.filter((r) => r.at.slice(0, 10) === jour).forEach((r, k) => {
+      const id = `r${k}`;
+      if (r.type === "releve") {
+        const [nom, t] = ENC[r.equipement] ?? ["Enceinte", 4];
+        p.releves.push({ id, correction: null, rattrapage: r.motif, enceinte: nom, valeur: r.valeur, t_max: t, conforme: r.valeur <= t, action: r.action, par: "Siège (démo)", at: r.at });
+      } else {
+        p.huiles.push({ id, correction: null, rattrapage: r.motif, friteuse: `Friteuse ${r.equipement.slice(1)}`, polaires: r.valeur, filtrage: r.decision === "filtree", changement: r.decision === "changee", non_utilisee: false, par: "Siège (démo)", at: r.at });
+      }
+    });
+    p.releves.sort((x, y) => x.at.localeCompare(y.at)); p.huiles.sort((x, y) => x.at.localeCompare(y.at));
     return attendre(p);
   },
   siegeCorriger: async (_table, id, motif, valeur) => {
     if (motif.trim().length < 5) throw new Error("Motif obligatoire (5 caractères au moins)");
     correctionsDemo.set(id, { motif: motif.trim(), valeur, par: "Siège (démo)", at: new Date().toISOString() });
+  },
+  equipementsSite: async () => attendre({
+    enceintes: [{ id: "e1", nom: "Chambre froide positive", t_max: 3 }, { id: "e2", nom: "Chambre froide négative", t_max: -18 }, { id: "e3", nom: "Frigo poste chaud", t_max: 4 }],
+    friteuses: [1, 2, 3, 4].map((i) => ({ id: `f${i}`, nom: `Friteuse ${i}`, litres: 25 })),
+  }),
+  siegeRattraper: async (r) => {
+    if (r.motif.trim().length < 5) throw new Error("Motif obligatoire (5 caractères au moins)");
+    if (new Date(r.at) > new Date()) throw new Error("L'heure de la saisie oubliée doit être passée");
+    rattrapagesDemo.push(r);
   },
   urlPhoto: async (chemin) => {
     const b = recuDemo.photos.get(chemin);

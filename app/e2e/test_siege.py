@@ -74,3 +74,22 @@ def test_rattrapage_par_le_siege(page):
     t = page.locator("tr.corrigee").inner_text()
     assert "−12" in t or "-12" in t, "valeur d'origine gardée (barrée)"
     assert "Corrigé par Siège (démo)" in t and "Erreur de saisie" in t
+
+def test_saisie_oubliee_par_le_siege(page):
+    ouvrir(page)   # horloge fixée au 20/11 15:40
+    page.click(".s3-carte:has-text('DALLAS')")
+    page.wait_for_selector("h2:has-text('Températures')")
+    page.click("text=+ Relevé oublié")
+    page.wait_for_selector("text=Relevé oublié ·")
+    bouton = page.locator("text=Enregistrer la saisie oubliée")
+    page.select_option("select.champ", label="Frigo poste chaud (max +4 °C)")
+    page.fill("input[type=time]", "18:00")
+    assert page.locator("text=Cette heure n'est pas encore passée.").count() == 1
+    page.fill("input[type=time]", "14:10")
+    page.fill(".correction input[inputmode=decimal]", "6")
+    page.wait_for_selector("text=action corrective faite à l'époque")
+    page.click("text=Relevé fait sur papier, pas sur la tablette")
+    assert bouton.is_disabled(), "action corrective obligatoire si hors seuil"
+    page.click(".correction button:has-text('Porte mal fermée, refermée')")
+    bouton.click()
+    page.wait_for_selector("tr:has-text('Frigo poste chaud'):has-text('Saisi après coup par le siège')")

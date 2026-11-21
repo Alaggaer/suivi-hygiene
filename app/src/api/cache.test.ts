@@ -22,7 +22,7 @@ function faux(): Api & { reseau: boolean } {
     anomaliesOuvertes: async () => { panne(); return []; },
     executer: async () => {}, televerserPhoto: async () => {},
     estSiege: async () => false, tableauSiege: async () => [], fournisseursNonConformes: async () => [],
-    anomaliesSiege: async () => [], siegeCorriger: async () => {}, etatRestaurants: async () => [], historiqueSite: async () => [], siegeChangerStatut: async () => {}, urlPhoto: async () => "",
+    anomaliesSiege: async () => [], siegeCorriger: async () => {}, siegeRattraper: async () => {}, equipementsSite: async () => ({ enceintes: [], friteuses: [] }), etatRestaurants: async () => [], historiqueSite: async () => [], siegeChangerStatut: async () => {}, urlPhoto: async () => "",
     preuvesJour: async () => ({ taches: [], releves: [], huiles: [], livraisons: [], produits: [], anomalies: [] }),
   });
 }

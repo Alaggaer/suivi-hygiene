@@ -1,5 +1,5 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
-import type { Anomalie, AnomalieSiege, Api, Correction, EtatRestaurant, JourHistorique, Preuves, EtatFriteuse, Fournisseur, FournisseurNC, LigneSiege, SeuilsHuile, Site, Tache } from "../types";
+import type { Anomalie, AnomalieSiege, Api, Correction, Enceinte, Friteuse, EtatRestaurant, JourHistorique, Preuves, EtatFriteuse, Fournisseur, FournisseurNC, LigneSiege, SeuilsHuile, Site, Tache } from "../types";
 import { ErreurDefinitive, type Operation } from "../operations";
 
 /**
@@ -99,6 +99,22 @@ export function supabaseApi(url: string, cleAnon: string): Api {
     },
     async siegeCorriger(table, id, motif, valeur) {
       verifier(await sb.rpc("siege_corriger", { p_table: table, p_id: id, p_motif: motif, p_valeur: valeur }));
+    },
+    async equipementsSite(siteId) {
+      const [e, f] = await Promise.all([
+        sb.from("enceintes").select("id, nom, t_max").eq("site_id", siteId).eq("actif", true).order("ordre"),
+        sb.from("friteuses").select("id, nom, litres").eq("site_id", siteId).eq("actif", true).order("nom"),
+      ]);
+      return {
+        enceintes: (ok(e) as Enceinte[]).map((x) => ({ ...x, t_max: Number(x.t_max) })),
+        friteuses: (ok(f) as Friteuse[]).map((x) => ({ ...x, litres: Number(x.litres) })),
+      };
+    },
+    async siegeRattraper(r) {
+      verifier(await sb.rpc("siege_rattraper", {
+        p_type: r.type, p_equipement: r.equipement, p_at: r.at, p_valeur: r.valeur, p_motif: r.motif,
+        p_action: r.type === "releve" ? r.action : null, p_decision: r.type === "huile" ? r.decision : null,
+      }));
     },
     async urlPhoto(chemin) {
       const { data, error } = await sb.storage.from("photos").createSignedUrl(chemin, 3600);
