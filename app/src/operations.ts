@@ -27,6 +27,10 @@ export type Operation =
       type: "stock_mort"; id: string; produit_id: string; reste: boolean;
       quantite?: string; dlc?: string; photo?: string; decision?: "jete" | "transfere" | "a_ecouler"; transfert_vers?: string;
     })
+  | (Base & {
+      type: "reponse_alerte"; id: string; alerte_id: string; trouve: boolean;
+      lot?: string; quantite?: string; photo?: string; action?: "reetiquete" | "isole" | "repris" | "detruit"; photo_action?: string;
+    })
   | (Base & { type: "utilisation"; id: string; photo: string; famille: string; service: "midi" | "soir" })
   | (Base & {
       type: "minuteur"; id: string; type_minuteur: "refroidissement" | "remise_temperature"; plat: string;

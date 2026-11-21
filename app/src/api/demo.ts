@@ -1,4 +1,4 @@
-import type { Api, Anomalie, AnomalieSiege, Correction, DecisionStock, Employe, EnceinteGestion, FournisseurGestion, FriteuseGestion, ModeleTache, SiteGestion, Tablette, EtatStock, LivraisonJour, Rattrapage, EtatRestaurant, EtatFriteuse, Preuves, Profil, Tache } from "../types";
+import type { AlerteSiege, ReponseAlerte, Api, Anomalie, AnomalieSiege, Correction, DecisionStock, Employe, EnceinteGestion, FournisseurGestion, FriteuseGestion, ModeleTache, SiteGestion, Tablette, EtatStock, LivraisonJour, Rattrapage, EtatRestaurant, EtatFriteuse, Preuves, Profil, Tache } from "../types";
 import { ErreurDefinitive, type Operation } from "../operations";
 import { transitionPermise } from "../logique";
 
@@ -46,6 +46,18 @@ const produitsDemo: { id: string; nom: string; fournisseur: string | null; consi
           { site_id: "s1", reste: false, quantite: null, dlc: null, photo: null, decision: null, transfert_vers: null, par: "Léa", at: iso(t0 - 4 * 24 * 60 * MIN) }] },
 ];
 const etatInv = (i?: InvDemo): EtatStock => (!i ? "a_verifier" : !i.reste || i.decision === "jete" || i.decision === "transfere" ? "solde" : "a_ecouler");
+/** Alertes produit en démo : un retrait du fournisseur à vérifier, une prolongation de DDM déjà traitée à DALLAS (s3). */
+type RepDemo = ReponseAlerte & { site_id: string };
+const alertesDemo: (Omit<AlerteSiege, "sites"> & { cible: string[] | null; reps: RepDemo[] })[] = [
+  { id: "al1", type: "retrait", produit: "Cheddar tranché 1 kg", fournisseur: "SYSCO", lots: "L2611A, L2611B", ddm_origine: null, ddm_nouvelle: null,
+    consigne: "Isoler, étiqueter « NE PAS UTILISER », le fournisseur repasse le reprendre", document: "demo/s1.webp", document_type: "image/webp",
+    cree_at: iso(t0 - 90 * MIN), echeance: iso(t0 + 150 * MIN), clos_at: null, cible: null,
+    reps: [{ site_id: "s0", trouve: false, lot: null, quantite: null, action: null, at: iso(t0 - 60 * MIN), par: "Hugo" }] },
+  { id: "al2", type: "prolongation", produit: "Sauce barbecue 2 L", fournisseur: "EPISAVEURS", lots: "B4471", ddm_origine: iso(t0 + 3 * 24 * 60 * MIN).slice(0, 10),
+    ddm_nouvelle: iso(t0 + 63 * 24 * 60 * MIN).slice(0, 10), consigne: null, document: "demo/s2.webp", document_type: "image/webp",
+    cree_at: iso(t0 - 26 * 60 * MIN), echeance: iso(t0 - 2 * 60 * MIN), clos_at: null, cible: null,
+    reps: [{ site_id: "s3", trouve: true, lot: "B4471", quantite: "4 bidons", action: "reetiquete", photo: "demo/s1.webp", photo_action: "demo/s2.webp", at: iso(t0 - 20 * 60 * MIN), par: "Karim" }] },
+];
 /** Gestion siège en démo : paramétrage en mémoire. */
 const gestion = {
   sites: SITES_DEMO.map(([nom, ville], i) => ({ id: `s${i}`, nom, ville, ouverture: "09:00:00", service_soir: "18:45:00", actif: true })) as SiteGestion[],
@@ -137,6 +149,21 @@ export const demoApi: Api = {
     produitsDemo.unshift({ id: `pr${produitsDemo.length + 1}`, nom: nom.trim(), fournisseur: fournisseurId ? "Fournisseur" : null,
       consigne: consigne.trim() || null, sortie_le: new Date().toISOString().slice(0, 10), actif: true, inv: [] });
   },
+  alertesDuSite: () => attendre(alertesDemo.filter((a) => !a.clos_at && (!a.cible || a.cible.includes("s3"))).map(({ cible: _c, reps, clos_at: _x, ...a }) => ({
+    ...a, reponses: reps.filter((r) => r.site_id === "s3").map(({ site_id: _s, ...r }) => r) }))),
+  alertesSiege: () => attendre(alertesDemo.map(({ cible, reps, ...a }) => ({
+    ...a, sites: SITES_DEMO.map(([nom], k) => ({ site_id: `s${k}`, restaurant: nom, reponses: reps.filter((r) => r.site_id === `s${k}`).map(({ site_id: _s, ...r }) => r) }))
+      .filter((x) => !cible || cible.includes(x.site_id)) }))),
+  siegeCreerAlerte: async (a) => {
+    if (a.produit.trim().length < 2) throw new Error("Nom du produit obligatoire");
+    if (a.type === "prolongation" && !a.date_est_ddm) throw new Error("Une DLC ne peut pas être prolongée : seule une DDM peut l'être");
+    const id = `al${alertesDemo.length + 1}`, h = a.type === "retrait" ? 4 : 24;
+    alertesDemo.unshift({ id, type: a.type, produit: a.produit.trim(), fournisseur: a.fournisseur_id ? "Fournisseur" : null, lots: a.lots.trim() || null,
+      ddm_origine: a.ddm_origine, ddm_nouvelle: a.ddm_nouvelle, consigne: a.consigne.trim() || null, document: a.document ? "demo/s1.webp" : null,
+      document_type: a.document ? "image/webp" : null, cree_at: iso(Date.now()), echeance: iso(Date.now() + h * 60 * MIN), clos_at: null, cible: a.sites, reps: [] });
+    return id;
+  },
+  siegeCloreAlerte: async (id) => { const a = alertesDemo.find((x) => x.id === id); if (a) a.clos_at = iso(Date.now()); },
   sitesGestion: () => attendre(gestion.sites.map((x) => ({ ...x }))),
   referentielSite: (site) => { const r = refDemo(site); return attendre({ enceintes: r.enceintes.map((x) => ({ ...x })), friteuses: r.friteuses.map((x) => ({ ...x })), modeles: r.modeles.map((x) => ({ ...x })) }); },
   fournisseursGestion: async () => {
@@ -352,6 +379,12 @@ export const demoApi: Api = {
         const p = produitsDemo.find((x) => x.id === op.produit_id);
         if (p && nouveau(op.id)) p.inv.push({ site_id: "s3", reste: op.reste, quantite: op.quantite ?? null, dlc: op.dlc ?? null, photo: op.photo ?? null,
           decision: op.decision ?? null, transfert_vers: op.transfert_vers ?? null, par: op.par_nom ?? "", at: op.at_client });
+        break;
+      }
+      case "reponse_alerte": {
+        const a = alertesDemo.find((x) => x.id === op.alerte_id);
+        if (a && nouveau(op.id)) a.reps.push({ site_id: "s3", trouve: op.trouve, lot: op.lot ?? null, quantite: op.quantite ?? null, action: op.action ?? null,
+          photo: op.photo ?? null, photo_action: op.photo_action ?? null, at: op.at_client, par: op.par_nom });
         break;
       }
       case "livraison_rangee": {

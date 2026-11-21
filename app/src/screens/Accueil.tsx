@@ -1,4 +1,5 @@
-import type { Anomalie, Tache } from "../types";
+import type { AlerteProduit, Anomalie, Tache } from "../types";
+import { LIBELLE_ALERTE } from "./AlertesProduit";
 import { duree, hm, useMaintenant } from "../ui/outils";
 import { etatTache, niveauEscalade, tachesALheure, trierTaches } from "../logique";
 
@@ -7,9 +8,9 @@ const SOUS: Record<string, string> = {
   nettoyage: "Fin de service", stock_carte: "Produits sortis de la carte", autre: "",
 };
 
-export function Accueil({ taches, anomalies, stocksAFaire = 0, onTache, onAller }: {
-  taches: Tache[]; anomalies: Anomalie[]; stocksAFaire?: number;
-  onTache: (t: Tache) => void; onAller: (ecran: "releves" | "huile" | "anomalies" | "stocks" | "livraison" | "produit" | "minuteur" | "signaler") => void;
+export function Accueil({ taches, anomalies, stocksAFaire = 0, alertes = [], onTache, onAller }: {
+  taches: Tache[]; anomalies: Anomalie[]; stocksAFaire?: number; alertes?: AlerteProduit[];
+  onTache: (t: Tache) => void; onAller: (ecran: "releves" | "huile" | "anomalies" | "stocks" | "alertes" | "livraison" | "produit" | "minuteur" | "signaler") => void;
 }) {
   const maintenant = useMaintenant(1000);
   const liste = trierTaches(taches, maintenant);
@@ -18,6 +19,12 @@ export function Accueil({ taches, anomalies, stocksAFaire = 0, onTache, onAller 
 
   return (
     <div className="home">
+      {alertes.filter((a) => !a.reponses.length).map((a) => (
+        <button key={a.id} className={`al-bandeau ${a.type}`} onClick={() => onAller("alertes")}>
+          <b>{LIBELLE_ALERTE[a.type]} : {a.produit}</b>
+          <span>{a.type === "retrait" ? "Vérifiez si vous en avez" : "Vérifiez et réétiquetez"} · avant {hm(a.echeance)}</span>
+        </button>
+      ))}
       <section className="panel">
         <h2>À faire aujourd'hui <small>{taches.length - faites.length} restantes</small></h2>
         <div className="tasks">
@@ -51,6 +58,12 @@ export function Accueil({ taches, anomalies, stocksAFaire = 0, onTache, onAller 
         <button className="act" onClick={() => onAller("releves")}><b>Températures</b><span>Relevé hors planning</span></button>
         <button className="act" onClick={() => onAller("huile")}><b>Huile</b><span>Mesure, filtrage, changement</span></button>
         <button className="act alert" onClick={() => onAller("signaler")}><b>Signaler</b><span>Un problème, une photo</span></button>
+        {alertes.length > 0 && (
+          <button className="act" onClick={() => onAller("alertes")}>
+            <b>Alertes produit</b><span>Retraits, prolongations DDM</span>
+            {alertes.some((a) => !a.reponses.length) && <span className="badge">{alertes.filter((a) => !a.reponses.length).length}</span>}
+          </button>
+        )}
         <button className="act" onClick={() => onAller("stocks")}>
           <b>Stocks morts</b><span>Produits sortis de la carte</span>
           {stocksAFaire > 0 && <span className="badge">{stocksAFaire}</span>}

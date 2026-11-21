@@ -1,5 +1,5 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
-import type { Anomalie, AnomalieSiege, Api, Correction, Employe, EnceinteGestion, FournisseurGestion, FriteuseGestion, LivraisonJour, ModeleTache, SiteGestion, StockMort, StockMortSiege, Tablette, Enceinte, Friteuse, EtatRestaurant, JourHistorique, Preuves, EtatFriteuse, Fournisseur, FournisseurNC, LigneSiege, SeuilsHuile, Site, Tache } from "../types";
+import type { AlerteProduit, AlerteSiege, Anomalie, AnomalieSiege, Api, Correction, Employe, EnceinteGestion, FournisseurGestion, FriteuseGestion, LivraisonJour, ModeleTache, SiteGestion, StockMort, StockMortSiege, Tablette, Enceinte, Friteuse, EtatRestaurant, JourHistorique, Preuves, EtatFriteuse, Fournisseur, FournisseurNC, LigneSiege, SeuilsHuile, Site, Tache } from "../types";
 import { ErreurDefinitive, type Operation } from "../operations";
 
 /**
@@ -134,6 +134,23 @@ export function supabaseApi(url: string, cleAnon: string): Api {
       return (ok(await sb.from("fournisseurs").select("id, nom, viande, jours_livraison, produits").eq("actif", true).order("nom")) as (Fournisseur & { jours_livraison: number[] | null })[])
         .map((f) => ({ id: f.id, nom: f.nom, viande: f.viande, jours: f.jours_livraison, produits: f.produits }));
     },
+    async alertesDuSite() { return ok(await sb.rpc("alertes_du_site")) as AlerteProduit[]; },
+    async alertesSiege() { return ok(await sb.rpc("alertes_siege")) as AlerteSiege[]; },
+    async siegeCreerAlerte(a) {
+      let document: string | null = null;
+      if (a.document) {
+        const ext = (a.document.name.split(".").pop() ?? "").toLowerCase().replace(/[^a-z0-9]/g, "") || "bin";
+        document = `alertes/${crypto.randomUUID()}.${ext}`;
+        const { error } = await sb.storage.from("photos").upload(document, a.document, { contentType: a.document.type || "application/octet-stream" });
+        if (error) throw new Error(`Document non envoyé : ${error.message}`);
+      }
+      return ok(await sb.rpc("siege_creer_alerte", {
+        p_type: a.type, p_produit: a.produit, p_fournisseur: a.fournisseur_id, p_lots: a.lots,
+        p_ddm_origine: a.ddm_origine, p_ddm_nouvelle: a.ddm_nouvelle, p_date_est_ddm: a.date_est_ddm, p_consigne: a.consigne,
+        p_document: document, p_document_type: a.document?.type || null, p_sites: a.sites,
+      })) as string;
+    },
+    async siegeCloreAlerte(id) { verifier(await sb.rpc("siege_clore_alerte", { p_id: id })); },
     async sitesGestion() { return ok(await sb.from("sites").select("id, nom, ville, ouverture, service_soir, actif").order("nom")) as SiteGestion[]; },
     async referentielSite(siteId) {
       const [e, f, m] = await Promise.all([
@@ -235,6 +252,10 @@ export function supabaseApi(url: string, cleAnon: string): Api {
         case "stock_mort":
           await inserer("inventaires_stock", [{ id: op.id, ...commun, produit_id: op.produit_id, reste: op.reste, quantite: op.quantite ?? null,
             dlc: op.dlc ?? null, photo: op.photo ?? null, decision: op.decision ?? null, transfert_vers: op.transfert_vers ?? null }]);
+          break;
+        case "reponse_alerte":
+          await inserer("reponses_alerte", [{ id: op.id, ...commun, alerte_id: op.alerte_id, trouve: op.trouve, lot: op.lot ?? null,
+            quantite: op.quantite ?? null, photo: op.photo ?? null, action: op.action ?? null, photo_action: op.photo_action ?? null }]);
           break;
         case "utilisation":
           await inserer("utilisations", [{ id: op.id, ...commun, photo: op.photo, famille: op.famille, service: op.service }]);

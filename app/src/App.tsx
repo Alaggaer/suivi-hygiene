@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { Anomalie, Api, Profil, Site, Tache } from "./types";
+import type { Anomalie, Api, Profil, Site, Tache, AlerteProduit } from "./types";
 import type { FileEnvoi } from "./hors-ligne/file";
 import type { Entree } from "./hors-ligne/stockage";
 import { ContexteProvider, nouvelId, useEnregistrer, useFile } from "./contexte";
@@ -12,6 +12,7 @@ import { TableauSiege } from "./screens/Siege";
 import { Huile } from "./screens/Huile";
 import { Livraison } from "./screens/Livraison";
 import { StocksMorts } from "./screens/StocksMorts";
+import { AlertesProduit, avecEnAttente } from "./screens/AlertesProduit";
 import { useRangerLivraison } from "./rangement";
 import { Produit } from "./screens/Produit";
 import { duree, hm, MIN, PaveNumerique, temp, useInactivite, useMaintenant, useToast } from "./ui/outils";
@@ -19,7 +20,7 @@ import { minuteurConforme } from "./logique";
 
 type Ecran =
   | { nom: "accueil" } | { nom: "releves"; tache?: Tache } | { nom: "huile"; tache?: Tache }
-  | { nom: "anomalies" } | { nom: "stocks" } | { nom: "livraison" } | { nom: "produit" } | { nom: "minuteur" }
+  | { nom: "anomalies" } | { nom: "stocks" } | { nom: "alertes" } | { nom: "livraison" } | { nom: "produit" } | { nom: "minuteur" }
   | { nom: "signaler"; categorie?: string } | { nom: "tache"; tache: Tache };
 
 /** Les saisies pas encore envoyées s'affichent tout de suite : tâche cochée, anomalie listée. */
@@ -57,6 +58,7 @@ export default function App({ api, file }: { api: Api; file: FileEnvoi }) {
   const minuteurs = useMinuteurs();
   const [voirRefusees, setVoirRefusees] = useState(false);
   const [stocksAFaireServeur, setStocksAFaire] = useState<string[]>([]);
+  const [alertesServeur, setAlertes] = useState<AlerteProduit[]>([]);
   // Au démarrage (souvent après une mise à jour qui corrige la cause), les saisies refusées sont retentées une fois.
   const retente = useRef(false);
   useEffect(() => {
@@ -90,6 +92,7 @@ export default function App({ api, file }: { api: Api; file: FileEnvoi }) {
     try {
       const [t, a] = await Promise.all([api.taches(), api.anomaliesOuvertes()]);
       setTaches(t); setAnomalies(a); setErreur(null);
+      api.alertesDuSite().then(setAlertes).catch(() => {});
       api.stocksMortsDuSite().then((s) => setStocksAFaire(s.filter((x) => x.a_faire).map((x) => x.produit_id))).catch(() => {});
     } catch (e) { setErreur((e as Error).message); }
   }, [api]);
@@ -106,6 +109,7 @@ export default function App({ api, file }: { api: Api; file: FileEnvoi }) {
 
   // Badge « Stocks morts » : produits à vérifier, moins ceux dont la réponse attend encore d'être envoyée.
   const stocksAFaire = stocksAFaireServeur.filter((id) => !entrees.some((e) => e.statut === "attente" && e.op.type === "stock_mort" && e.op.produit_id === id)).length;
+  const alertes = useMemo(() => avecEnAttente(alertesServeur, entrees), [alertesServeur, entrees]);
   const retour = () => { setEcran({ nom: "accueil" }); recharger(); };
   const ouvrirTache = (t: Tache) => {
     if (t.type === "releves") setEcran({ nom: "releves", tache: t });
@@ -127,8 +131,9 @@ export default function App({ api, file }: { api: Api; file: FileEnvoi }) {
   else if (ecran.nom === "minuteur") corps = <LancerMinuteur onFini={retour} lancer={minuteurs.ajouter} />;
   else if (ecran.nom === "signaler") corps = <Signaler onFini={retour} categorie={ecran.categorie} />;
   else if (ecran.nom === "tache") corps = <TacheSimple tache={ecran.tache} onFini={retour} onProbleme={() => setEcran({ nom: "signaler", categorie: "Propreté" })} />;
+  else if (ecran.nom === "alertes") corps = <AlertesProduit onFini={retour} enAttente={entrees} />;
   else if (ecran.nom === "stocks") corps = <StocksMorts onFini={retour} enAttente={entrees} />;
-  else corps = <Accueil taches={taches} anomalies={anomalies} stocksAFaire={stocksAFaire} onTache={ouvrirTache} onAller={(n) => setEcran({ nom: n })} />;
+  else corps = <Accueil taches={taches} anomalies={anomalies} stocksAFaire={stocksAFaire} alertes={alertes} onTache={ouvrirTache} onAller={(n) => setEcran({ nom: n })} />;
 
   const contenu = (
     <div id="app">

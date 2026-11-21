@@ -308,6 +308,54 @@ do $$ declare s uuid; pin text; pin2 text; e uuid; begin
 end $$;
 update auth.claims set jwt = '{"app_metadata":{"role":"siege"}}';
 
+-- alertes produit : retrait fournisseur et prolongation DDM
+update auth.claims set jwt = '{"sub":"00000000-0000-0000-0000-0000000000c1","app_metadata":{"role":"siege"}}';
+do $$ declare r uuid; pr uuid; j jsonb; n int; begin
+  begin
+    perform siege_creer_alerte('prolongation', 'Steak haché 15%', null, 'L123', current_date, current_date + 30, false, null, null, null, null);
+    raise exception 'ÉCHEC : prolongation d''une DLC acceptée';
+  exception when invalid_parameter_value then null; end;
+  begin
+    perform siege_creer_alerte('prolongation', 'Sauce barbecue', null, 'L9', current_date + 5, current_date, true, null, null, null, null);
+    raise exception 'ÉCHEC : nouvelle DDM antérieure acceptée';
+  exception when check_violation then null; end;
+  begin
+    perform siege_creer_alerte('retrait', 'Sauce barbecue', null, null, null, null, false, null, 'x/pirate.pdf', 'application/pdf', null);
+    raise exception 'ÉCHEC : document hors du dossier alertes accepté';
+  exception when invalid_parameter_value then null; end;
+  r := siege_creer_alerte('retrait', 'Cheddar tranché', null, 'L2611A, L2611B', null, null, false, 'Isoler et attendre la reprise', 'alertes/r.pdf', 'application/pdf', null);
+  pr := siege_creer_alerte('prolongation', 'Sauce barbecue', null, 'L9', current_date + 2, current_date + 60, true, null, 'alertes/p.jpg', 'image/jpeg',
+    array['00000000-0000-0000-0000-000000000001']::uuid[]);
+  assert (select count(*) from notifications where ref_table = 'alertes_produit' and niveau = 1 and site_id = '00000000-0000-0000-0000-000000000002') = 1,
+    'BOSTON prévenu du retrait seulement';
+  begin
+    insert into reponses_alerte (id, alerte_id, site_id, trouve, lot, quantite, photo, action, photo_action, par)
+    values (gen_random_uuid(), r, '00000000-0000-0000-0000-000000000001', true, 'L2611A', '2 sacs', 'a.webp', 'reetiquete', 'b.webp', '00000000-0000-0000-0000-0000000000a1');
+    raise exception 'ÉCHEC : retrait « réétiqueté » accepté';
+  exception when invalid_parameter_value then null; end;
+  begin
+    insert into reponses_alerte (id, alerte_id, site_id, trouve, lot, par)
+    values (gen_random_uuid(), r, '00000000-0000-0000-0000-000000000001', true, 'L2611A', '00000000-0000-0000-0000-0000000000a1');
+    raise exception 'ÉCHEC : lot trouvé sans photo ni action accepté';
+  exception when check_violation then null; end;
+  insert into reponses_alerte (id, alerte_id, site_id, trouve, lot, quantite, photo, action, photo_action, par)
+  values (gen_random_uuid(), r, '00000000-0000-0000-0000-000000000001', true, 'L2611A', '2 sacs', 'a.webp', 'isole', 'b.webp', '00000000-0000-0000-0000-0000000000a1');
+  update alertes_produit set cree_at = now() - interval '5 hours' where id = r;
+  n := relancer_alertes_produit();
+  assert exists (select 1 from notifications where niveau = 2 and destinataire = 'siege' and site_id = '00000000-0000-0000-0000-000000000002'
+    and titre like 'Sans réponse : retrait%'), 'relance au siège pour BOSTON sans réponse';
+  assert not exists (select 1 from notifications where niveau = 2 and ref_table = 'alertes_produit' and site_id = '00000000-0000-0000-0000-000000000001'),
+    'pas de relance pour DALLAS qui a répondu';
+  assert relancer_alertes_produit() = 0, 'relance une seule fois';
+  assert n >= 1 and not exists (select 1 from notifications where niveau = 2 and ref_id = md5(pr::text || '00000000-0000-0000-0000-000000000001')::uuid),
+    'prolongation : pas encore de relance (24 h)';
+  j := alertes_siege();
+  assert (select s->'reponses'->0->>'lot' from jsonb_array_elements(j) x, jsonb_array_elements(x->'sites') s
+          where x->>'id' = r::text and s->>'restaurant' = 'DALLAS') = 'L2611A', 'réponse de DALLAS visible au siège';
+  assert (select jsonb_array_length(x->'sites') from jsonb_array_elements(j) x where x->>'id' = pr::text) = 1, 'prolongation : DALLAS seul';
+end $$;
+update auth.claims set jwt = '{"app_metadata":{"role":"siege"}}';
+
 -- règles d'accès : une tablette ne voit que son site
 create role tablette in role authenticated; grant usage on schema public, auth to tablette; grant select, insert, update on all tables in schema public to tablette;
 grant select on auth.claims to tablette; grant execute on all functions in schema auth to tablette;
@@ -324,6 +372,22 @@ do $$ declare p uuid; r record; begin
   begin
     insert into inventaires_stock (id, produit_id, site_id, reste, par) values (gen_random_uuid(), p, '00000000-0000-0000-0000-000000000001', false, '00000000-0000-0000-0000-0000000000a2');
     raise exception 'ÉCHEC : inventaire pour un autre site accepté';
+  exception when insufficient_privilege then null; end;
+  -- alertes produit : BOSTON voit le retrait (tous les restaurants), pas la prolongation réservée à DALLAS
+  assert (select count(*) from jsonb_array_elements(alertes_du_site())) = 1, 'BOSTON : une alerte';
+  assert (select x->>'produit' from jsonb_array_elements(alertes_du_site()) x) = 'Cheddar tranché', 'BOSTON : le retrait';
+  assert (select count(*) from reponses_alerte) = 0, 'BOSTON ne voit pas les réponses de DALLAS';
+  insert into reponses_alerte (id, alerte_id, site_id, trouve, par)
+  select gen_random_uuid(), (x->>'id')::uuid, '00000000-0000-0000-0000-000000000002', false, '00000000-0000-0000-0000-0000000000a2' from jsonb_array_elements(alertes_du_site()) x;
+  assert (select jsonb_array_length(x->'reponses') from jsonb_array_elements(alertes_du_site()) x) = 1, 'BOSTON : réponse enregistrée';
+  begin
+    insert into reponses_alerte (id, alerte_id, site_id, trouve, par)
+    select gen_random_uuid(), id, '00000000-0000-0000-0000-000000000002', false, '00000000-0000-0000-0000-0000000000a2' from alertes_produit where produit = 'Sauce barbecue';
+    assert (select count(*) from alertes_produit where produit = 'Sauce barbecue') = 0, 'BOSTON ne voit pas l''alerte de DALLAS';
+  end;
+  begin
+    perform siege_creer_alerte('retrait', 'Pirate', null, null, null, null, false, null, null, null, null);
+    raise exception 'ÉCHEC : une tablette crée une alerte produit';
   exception when insufficient_privilege then null; end;
   begin
     perform siege_ajouter_employe('00000000-0000-0000-0000-000000000002', 'Intrus', 'chef');

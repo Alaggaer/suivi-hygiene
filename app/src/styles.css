@@ -392,3 +392,17 @@ tr.corrigee td{background:#fbf7ec}
   .g-liste { position: static; flex-direction: row; overflow-x: auto; }
   .g-item { flex: 0 0 auto; }
 }
+
+/* ---------- Alertes produit ---------- */
+.al-bandeau { grid-column: 1 / -1; display: flex; flex-direction: column; gap: 2px; text-align: left; padding: 14px 18px; border-radius: 14px; border: 0; cursor: pointer; font: inherit; color: #fff; background: #c62828; box-shadow: 0 2px 8px rgba(0,0,0,.15); }
+.al-bandeau.prolongation { background: #b45309; }
+.al-bandeau b { font-size: 19px; }
+.al-type { display: inline-block; font-size: .7em; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; padding: 3px 8px; border-radius: 6px; vertical-align: middle; color: #fff; background: #c62828; }
+.al-type.prolongation { background: #b45309; }
+.al-infos p { margin: 4px 0; }
+.al-ddm { font-size: 18px; }
+.al-rep { margin: 4px 0; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.al-form { display: flex; flex-direction: column; gap: 12px; }
+.al-ddm-ok { white-space: normal; align-items: flex-start; padding: 10px; background: #fff7ed; border-radius: 10px; }
+.al-siege.retrait { border-left: 4px solid #c62828; }
+.al-siege.prolongation { border-left: 4px solid #b45309; }

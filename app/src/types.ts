@@ -27,6 +27,26 @@ export interface Tache {
 
 /** viande : la question de l'origine est posée ; jours : jours de livraison habituels (1 = lundi … 7 = dimanche). */
 export type ProduitLivre = "frais" | "sec" | "surgele";
+/* ---------- Alertes produit (siège → restaurants) ---------- */
+export type TypeAlerte = "prolongation" | "retrait";
+export type ActionAlerte = "reetiquete" | "isole" | "repris" | "detruit";
+export interface ReponseAlerte {
+  trouve: boolean; lot: string | null; quantite: string | null; action: ActionAlerte | null; at: string;
+  photo?: string | null; photo_action?: string | null; par?: string | null;
+}
+export interface AlerteProduit {
+  id: string; type: TypeAlerte; produit: string; fournisseur: string | null; lots: string | null;
+  ddm_origine: string | null; ddm_nouvelle: string | null; consigne: string | null;
+  document: string | null; document_type: string | null; cree_at: string; echeance: string; reponses: ReponseAlerte[];
+}
+export interface AlerteSiege extends Omit<AlerteProduit, "reponses"> {
+  clos_at: string | null; sites: { site_id: string; restaurant: string; reponses: ReponseAlerte[] }[];
+}
+export interface NouvelleAlerte {
+  type: TypeAlerte; produit: string; fournisseur_id: string | null; lots: string; ddm_origine: string | null; ddm_nouvelle: string | null;
+  date_est_ddm: boolean; consigne: string; document: File | null; sites: string[] | null;
+}
+
 /* ---------- Gestion par le siège ---------- */
 export type RoleEmploye = "equipe" | "chef" | "responsable";
 export interface Employe { id: string; nom: string; role: RoleEmploye; actif: boolean }
@@ -125,6 +145,11 @@ export interface Api {
   stocksMortsSiege(): Promise<StockMortSiege[]>;
   siegeRetirerProduit(nom: string, fournisseurId: string | null, consigne: string): Promise<void>;
   siegeCloreProduit(id: string): Promise<void>;
+  /* Alertes produit */
+  alertesDuSite(): Promise<AlerteProduit[]>;
+  alertesSiege(): Promise<AlerteSiege[]>;
+  siegeCreerAlerte(a: NouvelleAlerte): Promise<string>;
+  siegeCloreAlerte(id: string): Promise<void>;
   /* Gestion par le siège */
   sitesGestion(): Promise<SiteGestion[]>;
   referentielSite(siteId: string): Promise<{ enceintes: EnceinteGestion[]; friteuses: FriteuseGestion[]; modeles: ModeleTache[] }>;
