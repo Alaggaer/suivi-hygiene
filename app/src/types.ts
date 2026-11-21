@@ -27,6 +27,28 @@ export interface Tache {
 
 /** viande : la question de l'origine est posée ; jours : jours de livraison habituels (1 = lundi … 7 = dimanche). */
 export type ProduitLivre = "frais" | "sec" | "surgele";
+/* ---------- Plan de nettoyage et de désinfection ---------- */
+export interface ProduitEntretien {
+  id?: string; nom: string; usage: string | null; dilution: string | null; temps_contact: string | null;
+  ft: string | null; fds: string | null; actif: boolean;
+}
+export type FrequenceNettoyage = "jour" | "semaine" | "mois";
+export interface ElementNettoyage {
+  id?: string; zone: string; element: string; frequence: FrequenceNettoyage; jour: number | null; heure_limite: string;
+  produit_id: string | null; methode: string | null; photo_obligatoire: boolean; sites: string[] | null; ordre: number; actif: boolean;
+}
+export interface ElementATaire {
+  id: string; zone: string; element: string; methode: string | null; photo_obligatoire: boolean;
+  produit: { id: string; nom: string; dilution: string | null; temps_contact: string | null; ft: string | null; fds: string | null } | null;
+  fait: { par: string | null; at: string; photo: string | null } | null;
+}
+export interface TacheNettoyage { tache_id: string; zone: string; echeance: string; elements: ElementATaire[] }
+export interface NettoyageSiege {
+  site_id: string; restaurant: string;
+  taches: { id: string; zone: string; echeance: string; faite_at: string | null; total: number; faits: number;
+    photos: { element: string; photo: string; par: string | null; at: string }[] }[];
+}
+
 /* ---------- Alertes produit (siège → restaurants) ---------- */
 export type TypeAlerte = "prolongation" | "retrait";
 export type ActionAlerte = "reetiquete" | "isole" | "repris" | "detruit";
@@ -56,7 +78,7 @@ export interface FriteuseGestion { id?: string; site_id: string; nom: string; li
 export interface ModeleTache { id?: string; site_id: string; type: string; titre: string; heure_limite: string; jours: number[]; actif: boolean }
 export interface FournisseurGestion { id?: string; nom: string; viande: boolean; produits: ProduitLivre[] | null; jours_livraison: number[] | null; actif: boolean }
 export interface Tablette { id: string; email: string; site_id: string; cree_at: string; derniere_connexion: string | null }
-export type TableGestion = "sites" | "enceintes" | "friteuses" | "taches_modeles" | "fournisseurs";
+export type TableGestion = "sites" | "enceintes" | "friteuses" | "taches_modeles" | "fournisseurs" | "nettoyage_elements" | "produits_entretien";
 /** Stocks morts : produit sorti de la carte (déclaré par le siège), et où en est ce restaurant. */
 export type EtatStock = "a_verifier" | "a_ecouler" | "solde";
 export type DecisionStock = "jete" | "transfere" | "a_ecouler";
@@ -145,6 +167,13 @@ export interface Api {
   stocksMortsSiege(): Promise<StockMortSiege[]>;
   siegeRetirerProduit(nom: string, fournisseurId: string | null, consigne: string): Promise<void>;
   siegeCloreProduit(id: string): Promise<void>;
+  /* Plan de nettoyage */
+  nettoyageDuJour(): Promise<TacheNettoyage[]>;
+  produitsEntretien(): Promise<ProduitEntretien[]>;
+  planNettoyage(): Promise<ElementNettoyage[]>;
+  nettoyageSiege(jour: string): Promise<NettoyageSiege[]>;
+  /** Dépose une FT ou une FDS (PDF) ; renvoie son chemin. */
+  siegeDeposerDocument(f: File): Promise<string>;
   /* Alertes produit */
   alertesDuSite(): Promise<AlerteProduit[]>;
   alertesSiege(): Promise<AlerteSiege[]>;

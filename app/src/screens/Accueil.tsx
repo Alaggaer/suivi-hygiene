@@ -5,12 +5,12 @@ import { etatTache, niveauEscalade, tachesALheure, trierTaches } from "../logiqu
 
 const SOUS: Record<string, string> = {
   releves: "Toutes les enceintes", huile: "Chaque friteuse · testeur de polarité", dlc: "Chambres froides et réserve",
-  nettoyage: "Fin de service", stock_carte: "Produits sortis de la carte", autre: "",
+  nettoyage: "Cochez chaque élément", stock_carte: "Produits sortis de la carte", autre: "",
 };
 
 export function Accueil({ taches, anomalies, stocksAFaire = 0, alertes = [], onTache, onAller }: {
   taches: Tache[]; anomalies: Anomalie[]; stocksAFaire?: number; alertes?: AlerteProduit[];
-  onTache: (t: Tache) => void; onAller: (ecran: "releves" | "huile" | "anomalies" | "stocks" | "alertes" | "livraison" | "produit" | "minuteur" | "signaler") => void;
+  onTache: (t: Tache) => void; onAller: (ecran: "releves" | "huile" | "anomalies" | "stocks" | "alertes" | "produits_entretien" | "livraison" | "produit" | "minuteur" | "signaler") => void;
 }) {
   const maintenant = useMaintenant(1000);
   const liste = trierTaches(taches, maintenant);
@@ -70,6 +70,7 @@ export function Accueil({ taches, anomalies, stocksAFaire = 0, alertes = [], onT
           <button className="act petit" onClick={() => onAller("anomalies")}>
             <b>Anomalies du site</b>{anomalies.length > 0 && <span className="badge">{anomalies.length}</span>}
           </button>
+          <button className="act petit" onClick={() => onAller("produits_entretien")}><b>Produits d'entretien</b></button>
           <button className="act petit discret" onClick={() => onAller("releves")}><b>Température hors planning</b></button>
         </div>
       </section>

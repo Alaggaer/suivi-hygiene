@@ -24,6 +24,7 @@ function faux(): Api & { reseau: boolean } {
     estSiege: async () => false, tableauSiege: async () => [], fournisseursNonConformes: async () => [],
     anomaliesSiege: async () => [], siegeCorriger: async () => {}, siegeRattraper: async () => {}, equipementsSite: async () => ({ enceintes: [], friteuses: [] }), etatRestaurants: async () => [], livraisonsDuJour: async () => [], stocksMortsDuSite: async () => [], stocksMortsSiege: async () => [],
     siegeRetirerProduit: async () => {}, siegeCloreProduit: async () => {},
+    nettoyageDuJour: async () => [], produitsEntretien: async () => [], planNettoyage: async () => [], nettoyageSiege: async () => [], siegeDeposerDocument: async () => "",
     alertesDuSite: async () => [], alertesSiege: async () => [], siegeCreerAlerte: async () => "", siegeCloreAlerte: async () => {},
     sitesGestion: async () => [], referentielSite: async () => ({ enceintes: [], friteuses: [], modeles: [] }), fournisseursGestion: async () => [],
     siegeEnregistrer: async () => {}, siegeCreerRestaurant: async () => "", employesSite: async () => [], siegeAjouterEmploye: async () => "",

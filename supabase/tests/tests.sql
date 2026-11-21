@@ -10,6 +10,7 @@ insert into taches_modeles(site_id,type,titre,heure_limite) values
   ('00000000-0000-0000-0000-000000000001','releves','Relevé matin','11:00'),
   ('00000000-0000-0000-0000-000000000001','huile','Huile','11:30');
 
+update nettoyage_elements set actif = false;   -- plan type : activé seulement dans son propre test
 do $$ begin
   assert generer_taches() = 2, 'génère 2 tâches';
   assert generer_taches() = 0, 'pas de doublon de tâches si on relance';
@@ -291,7 +292,7 @@ update auth.claims set jwt = '{"sub":"00000000-0000-0000-0000-0000000000c1","app
 do $$ declare s uuid; pin text; pin2 text; e uuid; begin
   s := siege_creer_restaurant('Seattle', 'Lyon');
   assert (select nom from sites where id = s) = 'SEATTLE', 'nom en majuscules';
-  assert (select count(*) from taches_modeles where site_id = s) = 5, 'tâches habituelles créées';
+  assert (select count(*) from taches_modeles where site_id = s) = 4, 'tâches habituelles créées (le nettoyage vient du plan)';
   begin perform siege_creer_restaurant('seattle', 'Lyon'); raise exception 'ÉCHEC : doublon de restaurant accepté';
   exception when invalid_parameter_value then null; end;
   pin := siege_ajouter_employe(s, 'Nora', 'chef');
@@ -356,6 +357,59 @@ do $$ declare r uuid; pr uuid; j jsonb; n int; begin
 end $$;
 update auth.claims set jwt = '{"app_metadata":{"role":"siege"}}';
 
+-- plan de nettoyage : tâches par zone, éléments cochés, photo obligatoire, tâche terminée
+update auth.claims set jwt = '{"sub":"00000000-0000-0000-0000-0000000000c1","app_metadata":{"role":"siege"}}';
+do $$ declare n int; t taches; e1 uuid; e2 uuid; e3 uuid; hotte uuid; j jsonb; begin
+  update nettoyage_elements set actif = true where frequence = 'jour' and zone = 'Plonge';
+  n := generer_nettoyages('2026-11-23');
+  assert n = (select count(*) from sites where actif), 'une tâche Plonge par restaurant actif';
+  assert generer_nettoyages('2026-11-23') = 0, 'pas de doublon de tâche de nettoyage';
+  select * into t from taches where zone = 'Plonge' and site_id = '00000000-0000-0000-0000-000000000001' and jour = '2026-11-23';
+  assert t.type = 'nettoyage' and t.titre = 'Nettoyage plonge' and cardinality(t.elements) = 3, 'tâche Plonge : 3 éléments';
+  assert t.echeance = ('2026-11-23 23:30'::timestamp at time zone 'Europe/Paris'), 'échéance à l''heure du plan';
+  update nettoyage_elements set actif = true where element = 'Détartrage du lave-vaisselle';
+  assert (select count(*) from nettoyage_prevu('00000000-0000-0000-0000-000000000001', '2026-11-29')) = 4, 'dimanche : détartrage en plus';
+  assert (select count(*) from nettoyage_prevu('00000000-0000-0000-0000-000000000001', '2026-11-23')) = 3, 'lundi : pas de détartrage';
+  update nettoyage_elements set sites = array['00000000-0000-0000-0000-000000000002']::uuid[] where element = 'Détartrage du lave-vaisselle';
+  assert (select count(*) from nettoyage_prevu('00000000-0000-0000-0000-000000000001', '2026-11-29')) = 3, 'élément réservé à BOSTON';
+  assert (select count(*) from nettoyage_prevu('00000000-0000-0000-0000-000000000002', '2026-11-29')) = 4, 'BOSTON a le détartrage';
+  update nettoyage_elements set actif = true where element = 'Hotte et filtres';
+  assert (select count(*) from nettoyage_prevu('00000000-0000-0000-0000-000000000001', '2026-11-27')) = 4, 'vendredi : hotte';
+  begin
+    insert into nettoyage_elements (zone, element, frequence, jour) values ('Cuisine', 'Four', 'mois', 31);
+    raise exception 'ÉCHEC : 31 du mois accepté';
+  exception when check_violation then null; end;
+  select id into e1 from nettoyage_elements where element = 'Bacs de plonge et égouttoirs';
+  select id into e2 from nettoyage_elements where element = 'Lave-vaisselle : vidange et filtres';
+  select id into e3 from nettoyage_elements where element = 'Sol de la plonge';
+  select id into hotte from nettoyage_elements where element = 'Hotte et filtres';
+  insert into nettoyages_faits (id, site_id, tache_id, element_id, par) values (gen_random_uuid(), '00000000-0000-0000-0000-000000000001', t.id, e1, '00000000-0000-0000-0000-0000000000a1');
+  begin
+    insert into nettoyages_faits (id, site_id, tache_id, element_id, par) values (gen_random_uuid(), '00000000-0000-0000-0000-000000000001', t.id, e2, '00000000-0000-0000-0000-0000000000a1');
+    raise exception 'ÉCHEC : élément sans la photo obligatoire accepté';
+  exception when check_violation then null; end;
+  begin
+    insert into nettoyages_faits (id, site_id, tache_id, element_id, par) values (gen_random_uuid(), '00000000-0000-0000-0000-000000000001', t.id, hotte, '00000000-0000-0000-0000-0000000000a1');
+    raise exception 'ÉCHEC : élément hors de la tâche accepté';
+  exception when foreign_key_violation then null; end;
+  begin
+    insert into nettoyages_faits (id, site_id, tache_id, element_id, par) values (gen_random_uuid(), '00000000-0000-0000-0000-000000000001', t.id, e3, '00000000-0000-0000-0000-0000000000a2');
+    raise exception 'ÉCHEC : employé d''un autre restaurant accepté';
+  exception when insufficient_privilege then null; end;
+  insert into nettoyages_faits (id, site_id, tache_id, element_id, photo, par) values (gen_random_uuid(), '00000000-0000-0000-0000-000000000001', t.id, e2, '00000000-0000-0000-0000-000000000001/x.webp', '00000000-0000-0000-0000-0000000000a1');
+  assert (select faite_at from taches where id = t.id) is null, 'tâche pas finie tant qu''il reste un élément';
+  insert into nettoyages_faits (id, site_id, tache_id, element_id, par) values (gen_random_uuid(), '00000000-0000-0000-0000-000000000001', t.id, e3, '00000000-0000-0000-0000-0000000000a1');
+  assert (select faite_at is not null and faite_par = '00000000-0000-0000-0000-0000000000a1' from taches where id = t.id), 'tâche terminée au dernier élément';
+  j := nettoyage_tache(t.id);
+  assert jsonb_array_length(j) = 3 and (select bool_and(x->'fait' is not null and x->'fait' <> 'null'::jsonb) from jsonb_array_elements(j) x), 'détail : 3 éléments faits';
+  assert j->1->>'element' = 'Lave-vaisselle : vidange et filtres' and j->1->'produit' = 'null'::jsonb, 'ordre du plan, sans produit';
+  assert j->0->'produit'->>'nom' = 'Détergent désinfectant surfaces', 'produit d''entretien joint';
+  j := nettoyage_siege('2026-11-23');
+  assert (select (x->'taches'->0->>'faits')::int = 3 and jsonb_array_length(x->'taches'->0->'photos') = 1 from jsonb_array_elements(j) x where x->>'restaurant' = 'DALLAS'), 'suivi siège DALLAS';
+  assert (select (x->'taches'->0->>'faits')::int from jsonb_array_elements(j) x where x->>'restaurant' = 'BOSTON') = 0, 'suivi siège BOSTON';
+end $$;
+update auth.claims set jwt = '{"app_metadata":{"role":"siege"}}';
+
 -- règles d'accès : une tablette ne voit que son site
 create role tablette in role authenticated; grant usage on schema public, auth to tablette; grant select, insert, update on all tables in schema public to tablette;
 grant select on auth.claims to tablette; grant execute on all functions in schema auth to tablette;
@@ -373,6 +427,19 @@ do $$ declare p uuid; r record; begin
     insert into inventaires_stock (id, produit_id, site_id, reste, par) values (gen_random_uuid(), p, '00000000-0000-0000-0000-000000000001', false, '00000000-0000-0000-0000-0000000000a2');
     raise exception 'ÉCHEC : inventaire pour un autre site accepté';
   exception when insufficient_privilege then null; end;
+  -- nettoyage : BOSTON ne voit ni ne coche la tâche de DALLAS ; il voit le plan et les produits
+  assert jsonb_array_length(nettoyage_tache((select id from taches where zone = 'Plonge' and site_id = '00000000-0000-0000-0000-000000000001' limit 1))) = 0, 'BOSTON ne voit pas le nettoyage de DALLAS';
+  assert (select count(*) from nettoyages_faits) = 0, 'BOSTON ne voit pas les nettoyages de DALLAS';
+  assert (select count(*) from produits_entretien) = 6, 'fiches produits lisibles';
+  assert jsonb_typeof(nettoyage_du_jour()) = 'array', 'nettoyage du jour lisible';
+  begin
+    insert into produits_entretien (nom) values ('Pirate');
+    raise exception 'ÉCHEC : une tablette ajoute un produit d''entretien';
+  exception when insufficient_privilege then null; end;
+  begin
+    update nettoyage_elements set photo_obligatoire = false where photo_obligatoire;
+    assert not found or (select bool_and(photo_obligatoire) from nettoyage_elements where element = 'Hotte et filtres'), 'plan non modifiable';
+  end;
   -- alertes produit : BOSTON voit le retrait (tous les restaurants), pas la prolongation réservée à DALLAS
   assert (select count(*) from jsonb_array_elements(alertes_du_site())) = 1, 'BOSTON : une alerte';
   assert (select x->>'produit' from jsonb_array_elements(alertes_du_site()) x) = 'Cheddar tranché', 'BOSTON : le retrait';
@@ -401,7 +468,7 @@ end $$;
 do $$ begin
   assert (select count(*) from releves) = 0, 'BOSTON ne voit pas les relevés de DALLAS';
   assert (select count(*) from journal) = 0, 'le journal n''est pas lisible par une tablette';
-  assert (select count(*) from taches) = 0, 'BOSTON ne voit pas les tâches de DALLAS';
+  assert (select count(*) from taches where site_id <> '00000000-0000-0000-0000-000000000002') = 0, 'BOSTON ne voit pas les tâches de DALLAS';
   assert (select count(*) from profils_du_site()) = 1, 'BOSTON ne voit que ses employés';
   assert not verifier_pin('00000000-0000-0000-0000-0000000000a1','1234'), 'PIN d''un autre site refusé';
   begin

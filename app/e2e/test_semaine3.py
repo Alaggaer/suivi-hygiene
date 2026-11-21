@@ -63,6 +63,6 @@ def test_signaler_critique_avec_photo(page):
 
 def test_tache_simple_cest_fait(page):
     connecter(page)
-    page.click("text=Nettoyage hottes et filtres")
+    page.click("text=Contrôle des pièges à nuisibles")
     page.click("text=C'est fait")
-    page.wait_for_selector(".task.faite:has-text('Nettoyage hottes et filtres')", timeout=3000)
+    page.wait_for_selector(".task.faite:has-text('Contrôle des pièges à nuisibles')", timeout=3000)

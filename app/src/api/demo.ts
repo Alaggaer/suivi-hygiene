@@ -1,4 +1,4 @@
-import type { AlerteSiege, ReponseAlerte, Api, Anomalie, AnomalieSiege, Correction, DecisionStock, Employe, EnceinteGestion, FournisseurGestion, FriteuseGestion, ModeleTache, SiteGestion, Tablette, EtatStock, LivraisonJour, Rattrapage, EtatRestaurant, EtatFriteuse, Preuves, Profil, Tache } from "../types";
+import type { ElementATaire, ElementNettoyage, ProduitEntretien, TacheNettoyage, AlerteSiege, ReponseAlerte, Api, Anomalie, AnomalieSiege, Correction, DecisionStock, Employe, EnceinteGestion, FournisseurGestion, FriteuseGestion, ModeleTache, SiteGestion, Tablette, EtatStock, LivraisonJour, Rattrapage, EtatRestaurant, EtatFriteuse, Preuves, Profil, Tache } from "../types";
 import { ErreurDefinitive, type Operation } from "../operations";
 import { transitionPermise } from "../logique";
 
@@ -18,7 +18,9 @@ const taches: Tache[] = [
   { id: "t1", type: "releves", titre: "Relevé températures du matin", echeance: iso(t0 - 25 * MIN), faite_at: null, faite_par_nom: null, escalade: 0 },
   { id: "t2", type: "huile", titre: "Mesure de l'huile", echeance: iso(t0 + 10 * MIN), faite_at: null, faite_par_nom: null, escalade: 0 },
   { id: "t3", type: "dlc", titre: "Tour des DLC", echeance: iso(t0 - 150 * MIN), faite_at: iso(t0 - 140 * MIN), faite_par_nom: "Karim", escalade: 0 },
-  { id: "t4", type: "nettoyage", titre: "Nettoyage hottes et filtres", echeance: iso(t0 + 180 * MIN), faite_at: null, faite_par_nom: null, escalade: 0 },
+  { id: "t4", type: "autre", titre: "Contrôle des pièges à nuisibles", echeance: iso(t0 + 180 * MIN), faite_at: null, faite_par_nom: null, escalade: 0 },
+  { id: "t6", type: "nettoyage", titre: "Nettoyage cuisine", echeance: iso(t0 + 60 * MIN), faite_at: null, faite_par_nom: null, escalade: 0 },
+  { id: "t7", type: "nettoyage", titre: "Nettoyage sanitaires", echeance: iso(t0 + 240 * MIN), faite_at: null, faite_par_nom: null, escalade: 0 },
   { id: "t5", type: "releves", titre: "Relevé températures du soir", echeance: iso(t0 + 390 * MIN), faite_at: null, faite_par_nom: null, escalade: 0 },
 ];
 const anomalies: Anomalie[] = [
@@ -46,6 +48,35 @@ const produitsDemo: { id: string; nom: string; fournisseur: string | null; consi
           { site_id: "s1", reste: false, quantite: null, dlc: null, photo: null, decision: null, transfert_vers: null, par: "Léa", at: iso(t0 - 4 * 24 * 60 * MIN) }] },
 ];
 const etatInv = (i?: InvDemo): EtatStock => (!i ? "a_verifier" : !i.reste || i.decision === "jete" || i.decision === "transfere" ? "solde" : "a_ecouler");
+/** Plan de nettoyage en démo : produits, plan du groupe, tâches du jour de DALLAS. */
+const entretienDemo: ProduitEntretien[] = [
+  { id: "pe1", nom: "Détergent désinfectant surfaces", usage: "Plans de travail, ustensiles, frigos", dilution: "Prêt à l'emploi", temps_contact: "5 min", ft: "demo/s1.webp", fds: "demo/s2.webp", actif: true },
+  { id: "pe2", nom: "Dégraissant cuisine", usage: "Hotte, filtres, plaques", dilution: "5 % : 50 mL pour 1 L", temps_contact: "10 min", ft: null, fds: "demo/s2.webp", actif: true },
+  { id: "pe3", nom: "Désinfectant sanitaires", usage: "Toilettes, lavabos, poignées", dilution: "Prêt à l'emploi", temps_contact: "5 min", ft: null, fds: null, actif: true },
+];
+const planDemo: ElementNettoyage[] = [
+  ["Cuisine", "Plans de travail et surfaces", "jour", null, "15:30:00", "pe1", "Débarrasser, pulvériser, laisser agir, rincer", false, 1],
+  ["Cuisine", "Plaque de cuisson et grill", "jour", null, "15:30:00", "pe2", "Racler à chaud, dégraisser à froid, rincer", true, 2],
+  ["Cuisine", "Sol de la cuisine", "jour", null, "15:30:00", null, null, false, 3],
+  ["Cuisine", "Hotte et filtres", "semaine", 5, "23:30:00", "pe2", "Filtres démontés, trempage, rinçage", true, 4],
+  ["Sanitaires", "Sanitaires clients et personnel", "jour", null, "23:30:00", "pe3", null, true, 1],
+  ["Salle", "Vitres et portes vitrées", "mois", 1, "15:30:00", null, null, false, 1],
+].map(([zone, element, frequence, jour, heure_limite, produit_id, methode, photo_obligatoire, ordre], i) => ({
+  id: `ne${i + 1}`, zone, element, frequence, jour, heure_limite, produit_id, methode, photo_obligatoire, sites: null, ordre, actif: true,
+}) as ElementNettoyage);
+const faitsDemo = new Map<string, { par: string | null; at: string; photo: string | null }>([["t6:ne1", { par: "Julie", at: iso(t0 - 20 * MIN), photo: null }]]);
+function tachesNettoyageDemo(): TacheNettoyage[] {
+  const el = (tache: string, id: string): ElementATaire => {
+    const e = planDemo.find((x) => x.id === id)!, p = entretienDemo.find((x) => x.id === e.produit_id);
+    return { id, zone: e.zone, element: e.element, methode: e.methode, photo_obligatoire: e.photo_obligatoire,
+      produit: p ? { id: p.id!, nom: p.nom, dilution: p.dilution, temps_contact: p.temps_contact, ft: p.ft, fds: p.fds } : null,
+      fait: faitsDemo.get(`${tache}:${id}`) ?? null };
+  };
+  return [
+    { tache_id: "t6", zone: "Cuisine", echeance: taches.find((t) => t.id === "t6")!.echeance, elements: ["ne1", "ne2", "ne3"].map((x) => el("t6", x)) },
+    { tache_id: "t7", zone: "Sanitaires", echeance: taches.find((t) => t.id === "t7")!.echeance, elements: [el("t7", "ne5")] },
+  ];
+}
 /** Alertes produit en démo : un retrait du fournisseur à vérifier, une prolongation de DDM déjà traitée à DALLAS (s3). */
 type RepDemo = ReponseAlerte & { site_id: string };
 const alertesDemo: (Omit<AlerteSiege, "sites"> & { cible: string[] | null; reps: RepDemo[] })[] = [
@@ -149,6 +180,19 @@ export const demoApi: Api = {
     produitsDemo.unshift({ id: `pr${produitsDemo.length + 1}`, nom: nom.trim(), fournisseur: fournisseurId ? "Fournisseur" : null,
       consigne: consigne.trim() || null, sortie_le: new Date().toISOString().slice(0, 10), actif: true, inv: [] });
   },
+  nettoyageDuJour: () => attendre(tachesNettoyageDemo()),
+  produitsEntretien: () => attendre(entretienDemo.map((x) => ({ ...x }))),
+  planNettoyage: () => attendre(planDemo.map((x) => ({ ...x }))),
+  nettoyageSiege: () => attendre(SITES_DEMO.map(([nom], k) => ({
+    site_id: `s${k}`, restaurant: nom,
+    taches: k === 3 ? tachesNettoyageDemo().map((t) => ({ id: t.tache_id, zone: t.zone, echeance: t.echeance, faite_at: taches.find((x) => x.id === t.tache_id)!.faite_at,
+      total: t.elements.length, faits: t.elements.filter((e) => e.fait).length,
+      photos: t.elements.filter((e) => e.fait?.photo).map((e) => ({ element: e.element, photo: e.fait!.photo!, par: e.fait!.par, at: e.fait!.at })) }))
+      : [{ id: `x${k}a`, zone: "Cuisine", echeance: iso(t0 + 60 * MIN), faite_at: k % 4 === 0 ? iso(t0 - 10 * MIN) : null, total: 3, faits: k % 4 === 0 ? 3 : k % 3,
+           photos: k % 4 === 0 ? [{ element: "Plaque de cuisson et grill", photo: "demo/s1.webp", par: "Hugo", at: iso(t0 - 12 * MIN) }] : [] },
+         { id: `x${k}b`, zone: "Sanitaires", echeance: iso(t0 + 240 * MIN), faite_at: null, total: 1, faits: 0, photos: [] }],
+  }))),
+  siegeDeposerDocument: async () => "demo/s2.webp",
   alertesDuSite: () => attendre(alertesDemo.filter((a) => !a.clos_at && (!a.cible || a.cible.includes("s3"))).map(({ cible: _c, reps, clos_at: _x, ...a }) => ({
     ...a, reponses: reps.filter((r) => r.site_id === "s3").map(({ site_id: _s, ...r }) => r) }))),
   alertesSiege: () => attendre(alertesDemo.map(({ cible, reps, ...a }) => ({
@@ -173,6 +217,11 @@ export const demoApi: Api = {
   },
   siegeEnregistrer: async (table, ligne) => {
     const l = ligne as Record<string, unknown> & { id?: string; site_id?: string };
+    if (table === "nettoyage_elements" || table === "produits_entretien") {
+      const lst = (table === "nettoyage_elements" ? planDemo : entretienDemo) as unknown as Record<string, unknown>[];
+      if (l.id) Object.assign(lst.find((x) => x.id === l.id) ?? {}, l); else lst.push({ ...l, id: `n${++gestion.n}` });
+      return;
+    }
     const liste: Record<string, unknown>[] = table === "sites" ? gestion.sites as never : table === "fournisseurs" ? (gestion.fournisseurs ?? []) as never
       : refDemo(l.site_id ?? "")[{ enceintes: "enceintes", friteuses: "friteuses", taches_modeles: "modeles" }[table] as "enceintes"] as never;
     if (l.id) Object.assign(liste.find((x) => x.id === l.id) ?? {}, l);
@@ -379,6 +428,13 @@ export const demoApi: Api = {
         const p = produitsDemo.find((x) => x.id === op.produit_id);
         if (p && nouveau(op.id)) p.inv.push({ site_id: "s3", reste: op.reste, quantite: op.quantite ?? null, dlc: op.dlc ?? null, photo: op.photo ?? null,
           decision: op.decision ?? null, transfert_vers: op.transfert_vers ?? null, par: op.par_nom ?? "", at: op.at_client });
+        break;
+      }
+      case "nettoyage_fait": {
+        const cleFait = `${op.tache_id}:${op.element_id}`;
+        if (!faitsDemo.has(cleFait)) faitsDemo.set(cleFait, { par: op.par_nom, at: op.at_client, photo: op.photo ?? null });
+        const t = tachesNettoyageDemo().find((x) => x.tache_id === op.tache_id);
+        if (t && t.elements.every((e) => e.fait)) terminer(op.tache_id);
         break;
       }
       case "reponse_alerte": {

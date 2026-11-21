@@ -13,6 +13,8 @@ import { Huile } from "./screens/Huile";
 import { Livraison } from "./screens/Livraison";
 import { StocksMorts } from "./screens/StocksMorts";
 import { AlertesProduit, avecEnAttente } from "./screens/AlertesProduit";
+import { Nettoyage, ProduitsEntretien } from "./screens/Nettoyage";
+import { prechargerFiches } from "./fiches";
 import { useRangerLivraison } from "./rangement";
 import { Produit } from "./screens/Produit";
 import { duree, hm, MIN, PaveNumerique, temp, useInactivite, useMaintenant, useToast } from "./ui/outils";
@@ -20,7 +22,7 @@ import { minuteurConforme } from "./logique";
 
 type Ecran =
   | { nom: "accueil" } | { nom: "releves"; tache?: Tache } | { nom: "huile"; tache?: Tache }
-  | { nom: "anomalies" } | { nom: "stocks" } | { nom: "alertes" } | { nom: "livraison" } | { nom: "produit" } | { nom: "minuteur" }
+  | { nom: "anomalies" } | { nom: "stocks" } | { nom: "alertes" } | { nom: "produits_entretien" } | { nom: "nettoyage"; tache: Tache } | { nom: "livraison" } | { nom: "produit" } | { nom: "minuteur" }
   | { nom: "signaler"; categorie?: string } | { nom: "tache"; tache: Tache };
 
 /** Les saisies pas encore envoyées s'affichent tout de suite : tâche cochée, anomalie listée. */
@@ -93,6 +95,8 @@ export default function App({ api, file }: { api: Api; file: FileEnvoi }) {
       const [t, a] = await Promise.all([api.taches(), api.anomaliesOuvertes()]);
       setTaches(t); setAnomalies(a); setErreur(null);
       api.alertesDuSite().then(setAlertes).catch(() => {});
+      api.nettoyageDuJour().catch(() => {});   // gardé pour l'ouvrir hors ligne
+      api.produitsEntretien().then((l) => prechargerFiches(api, l.flatMap((p) => [p.ft, p.fds]).filter((x): x is string => !!x))).catch(() => {});
       api.stocksMortsDuSite().then((s) => setStocksAFaire(s.filter((x) => x.a_faire).map((x) => x.produit_id))).catch(() => {});
     } catch (e) { setErreur((e as Error).message); }
   }, [api]);
@@ -113,6 +117,7 @@ export default function App({ api, file }: { api: Api; file: FileEnvoi }) {
   const retour = () => { setEcran({ nom: "accueil" }); recharger(); };
   const ouvrirTache = (t: Tache) => {
     if (t.type === "releves") setEcran({ nom: "releves", tache: t });
+    else if (t.type === "nettoyage" && t.titre.startsWith("Nettoyage ") && !t.faite_at) setEcran({ nom: "nettoyage", tache: t });
     else if (t.type === "huile") setEcran({ nom: "huile", tache: t });
     else setEcran({ nom: "tache", tache: t });
   };
@@ -131,6 +136,8 @@ export default function App({ api, file }: { api: Api; file: FileEnvoi }) {
   else if (ecran.nom === "minuteur") corps = <LancerMinuteur onFini={retour} lancer={minuteurs.ajouter} />;
   else if (ecran.nom === "signaler") corps = <Signaler onFini={retour} categorie={ecran.categorie} />;
   else if (ecran.nom === "tache") corps = <TacheSimple tache={ecran.tache} onFini={retour} onProbleme={() => setEcran({ nom: "signaler", categorie: "Propreté" })} />;
+  else if (ecran.nom === "nettoyage") corps = <Nettoyage tache={ecran.tache} enAttente={entrees} onFini={retour} onProduits={() => setEcran({ nom: "produits_entretien" })} />;
+  else if (ecran.nom === "produits_entretien") corps = <ProduitsEntretien onFini={retour} />;
   else if (ecran.nom === "alertes") corps = <AlertesProduit onFini={retour} enAttente={entrees} />;
   else if (ecran.nom === "stocks") corps = <StocksMorts onFini={retour} enAttente={entrees} />;
   else corps = <Accueil taches={taches} anomalies={anomalies} stocksAFaire={stocksAFaire} alertes={alertes} onTache={ouvrirTache} onAller={(n) => setEcran({ nom: n })} />;
