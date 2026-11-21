@@ -218,6 +218,17 @@ do $$ declare r uuid; j jsonb; n int; begin
 end $$;
 update auth.claims set jwt = '{"app_metadata":{"role":"siege"}}';
 
+-- heure réelle : une saisie faite hors ligne s'affiche à l'heure de la tablette (moins de 24 h), sinon à l'heure de réception
+do $$ declare j jsonb; r uuid := gen_random_uuid(); r2 uuid := gen_random_uuid(); begin
+  insert into releves(id,site_id,enceinte_id,valeur,par,at_client) select r, site_id, id, 2, '00000000-0000-0000-0000-0000000000a1', now() - interval '3 hours' from enceintes where t_max >= 0 and site_id = '00000000-0000-0000-0000-000000000001' limit 1;
+  insert into releves(id,site_id,enceinte_id,valeur,par,at_client) select r2, site_id, id, 2, '00000000-0000-0000-0000-0000000000a1', now() + interval '5 hours' from enceintes where t_max >= 0 and site_id = '00000000-0000-0000-0000-000000000001' limit 1;
+  j := preuves_jour('00000000-0000-0000-0000-000000000001', ((now() - interval '3 hours') at time zone 'Europe/Paris')::date);
+  assert abs(extract(epoch from ((select (x->>'at')::timestamptz from jsonb_array_elements(j->'releves') x where x->>'id' = r::text) - (now() - interval '3 hours')))) < 5, 'heure de la tablette retenue';
+  assert (select (x->>'recu_at')::timestamptz from jsonb_array_elements(j->'releves') x where x->>'id' = r::text) > now() - interval '1 minute', 'heure de réception gardée';
+  j := preuves_jour('00000000-0000-0000-0000-000000000001', (now() at time zone 'Europe/Paris')::date);
+  assert abs(extract(epoch from ((select (x->>'at')::timestamptz from jsonb_array_elements(j->'releves') x where x->>'id' = r2::text) - now()))) < 60, 'heure tablette dans le futur ignorée';
+end $$;
+
 -- rattrapage d'une saisie oubliée par le siège
 update auth.claims set jwt = '{"sub":"00000000-0000-0000-0000-0000000000c1","app_metadata":{"role":"siege"}}';
 do $$ declare enc uuid; r uuid; j jsonb; begin

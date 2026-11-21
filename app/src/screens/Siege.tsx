@@ -16,6 +16,11 @@ const NIV: Record<NiveauResto, { libelle: string; cls: string }> = {
 const G = { critique: "bad", majeure: "warn", mineure: "none" } as const;
 const heure = (iso: string) => new Date(iso).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/Paris" });
 const quand = (iso: string) => new Date(iso).toLocaleString("fr-FR", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", timeZone: "Europe/Paris" });
+/** « reçue 15:07 » quand la saisie (faite hors ligne) est arrivée au serveur plus de 10 min après avoir été faite. */
+function Recu({ at, recu }: { at: string; recu?: string }) {
+  if (!recu || Math.abs(new Date(recu).getTime() - new Date(at).getTime()) < 10 * 60_000) return null;
+  return <span className="recu" title="Saisie faite hors ligne, envoyée plus tard"> · reçue {heure(recu)}</span>;
+}
 const deg = (v: number | null) => (v === null ? "—" : `${v > 0 ? "+" : ""}${v.toLocaleString("fr-FR")} °C`);
 const aujourdHui = () => new Date().toLocaleDateString("en-CA", { timeZone: "Europe/Paris" });
 const jourLong = (j: string) => new Date(`${j}T12:00:00`).toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
@@ -232,7 +237,7 @@ function Fiche({ api, etat, anomalies, onChange, maintenant }: { api: Api; etat:
                     const v = r.correction ? r.correction.valeur : r.valeur;
                     const conforme = v === null ? true : v <= r.t_max;
                     return (
-                      <tr key={i} className={r.correction ? "corrigee" : ""}><td className="num hint">{heure(r.at)}</td><td><b>{r.enceinte}</b></td>
+                      <tr key={i} className={r.correction ? "corrigee" : ""}><td className="num hint">{heure(r.at)}<Recu at={r.at} recu={r.recu_at} /></td><td><b>{r.enceinte}</b></td>
                         <td className={`num ${conforme ? "" : "t-bad"}`}>{r.correction ? <><s>{deg(r.valeur)}</s> <b>{v === null ? "annulé" : deg(v)}</b></> : <b>{deg(r.valeur)}</b>}</td>
                         <td>{conforme ? <span className="hint">max {deg(r.t_max)}</span> : <><span className="pill bad">max {deg(r.t_max)}</span>{r.action && <><br /><span className="hint">{r.action}</span></>}</>}
                           {r.correction && <><br /><Corr c={r.correction} /></>}
@@ -252,7 +257,7 @@ function Fiche({ api, etat, anomalies, onChange, maintenant }: { api: Api; etat:
                       <div key={i} className="s3-friteuse">
                         <div className="s3-friteuse-tete"><b>{h.friteuse}</b><b className={cls === "bad" || cls === "warn" ? `t-${cls}` : ""}>{h.non_utilisee ? "—" : v === null ? "—" : `${v.toLocaleString("fr-FR")} %`}</b></div>
                         <div className="s3-jauge"><span className={cls} style={{ width: `${Math.min(100, ((v ?? 0) / 25) * 100)}%` }} /></div>
-                        <div className="hint">{h.non_utilisee ? "non utilisée" : [h.filtrage && "filtrée", h.changement && "huile changée"].filter(Boolean).join(" · ") || "mesurée"} · {heure(h.at)} · {h.par}</div>
+                        <div className="hint">{h.non_utilisee ? "non utilisée" : [h.filtrage && "filtrée", h.changement && "huile changée"].filter(Boolean).join(" · ") || "mesurée"} · {heure(h.at)}<Recu at={h.at} recu={h.recu_at} /> · {h.par}</div>
                         {h.rattrapage && <div className="corr">Saisie après coup par le siège : « {h.rattrapage} »</div>}
                         {h.correction && <div><s className="hint">{h.polaires === null ? "—" : `${h.polaires.toLocaleString("fr-FR")} %`}</s> <Corr c={h.correction} /></div>}
                         {!h.non_utilisee && <button className="lien ecran-seul" onClick={() => setACorriger({ table: "huiles", id: h.id, libelle: `${h.friteuse} · ${h.polaires ?? "—"} % à ${heure(h.at)}`, unite: "%", bornes: BORNES_HUILE })}>Corriger</button>}
@@ -273,7 +278,7 @@ function Fiche({ api, etat, anomalies, onChange, maintenant }: { api: Api; etat:
                     {urls[l.photo_bl] ? <img src={urls[l.photo_bl]} alt="" /> : <span>BL</span>}
                   </button>
                   <div>
-                    <div><b>{l.fournisseur}</b> <span className="hint">· {heure(l.at)} · {l.par}</span></div>
+                    <div><b>{l.fournisseur}</b> <span className="hint">· {heure(l.at)}<Recu at={l.at} recu={l.recu_at} /> · {l.par}</span></div>
                     <div className="hint">Camion {deg(l.t_camion)}{l.t_frais !== null ? ` · frais ${deg(l.t_frais)}` : ""}{l.t_surgele !== null ? ` · surgelé ${deg(l.t_surgele)}` : ""}</div>
                     {l.viande && <div className="hint">Viande · origine {l.origine_ok ? "vérifiée" : "non vérifiée"}</div>}
                     <div className="s3-pills">
@@ -295,7 +300,7 @@ function Fiche({ api, etat, anomalies, onChange, maintenant }: { api: Api; etat:
               <div className="s3-produits">{p.produits.map((u, i) => (
                 <button key={i} className="s3-produit" onClick={() => urls[u.photo] && setPhoto(urls[u.photo])} aria-label={`Étiquette ${u.famille}`}>
                   <span className="s3-produit-img">{urls[u.photo] ? <img src={urls[u.photo]} alt="" /> : null}</span>
-                  <span className="s3-produit-txt"><b>{u.famille}</b><br /><span className="hint">{u.service} · {heure(u.at)} · {u.par}</span></span>
+                  <span className="s3-produit-txt"><b>{u.famille}</b><br /><span className="hint">{u.service} · {heure(u.at)}<Recu at={u.at} recu={u.recu_at} /> · {u.par}</span></span>
                 </button>
               ))}</div>
             )}

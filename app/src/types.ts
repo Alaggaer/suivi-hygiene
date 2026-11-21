@@ -67,11 +67,11 @@ export type Rattrapage =
 /** Preuves d'un restaurant pour un jour (ce qu'on montre lors d'un contrôle). */
 export interface Preuves {
   taches: { titre: string; echeance: string; faite_at: string | null; par: string | null }[];
-  releves: { id: string; correction: Correction | null; rattrapage: string | null; enceinte: string; valeur: number; t_max: number; conforme: boolean; action: string | null; par: string; at: string }[];
-  huiles: { id: string; correction: Correction | null; rattrapage: string | null; friteuse: string; polaires: number | null; filtrage: boolean; changement: boolean; non_utilisee: boolean; par: string; at: string }[];
-  livraisons: { id: string; correction: Correction | null; fournisseur: string; t_camion: number; t_frais: number | null; t_surgele: number | null; conforme: boolean; motifs: string[] | null;
+  releves: { id: string; recu_at?: string; correction: Correction | null; rattrapage: string | null; enceinte: string; valeur: number; t_max: number; conforme: boolean; action: string | null; par: string; at: string }[];
+  huiles: { id: string; recu_at?: string; correction: Correction | null; rattrapage: string | null; friteuse: string; polaires: number | null; filtrage: boolean; changement: boolean; non_utilisee: boolean; par: string; at: string }[];
+  livraisons: { id: string; recu_at?: string; correction: Correction | null; fournisseur: string; t_camion: number; t_frais: number | null; t_surgele: number | null; conforme: boolean; motifs: string[] | null;
     action: string | null; viande: boolean; origine_ok: boolean | null; photo_bl: string; photo_nc: string | null; range_at: string | null; par: string; at: string }[];
-  produits: { famille: string; service: string; photo: string; par: string; at: string }[];
+  produits: { recu_at?: string; famille: string; service: string; photo: string; par: string; at: string }[];
   anomalies: { titre: string; gravite: Gravite; statut: Anomalie["statut"]; at: string }[];
 }
 export interface FournisseurNC { fournisseur: string; livraisons: number; non_conformes: number }

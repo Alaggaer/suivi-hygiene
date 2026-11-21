@@ -126,7 +126,7 @@ export const demoApi: Api = {
         { titre: "Relevé températures du soir", echeance: h("18:00"), faite_at: null, par: null },
       ],
       releves: [
-        { id: "p1", correction: correctionsDemo.get("p1") ?? null, rattrapage: null, enceinte: "Chambre froide positive", valeur: 2.8, t_max: 3, conforme: true, action: null, par: "Karim", at: h("10:42") },
+        { id: "p1", correction: correctionsDemo.get("p1") ?? null, rattrapage: null, enceinte: "Chambre froide positive", valeur: 2.8, t_max: 3, conforme: true, action: null, par: "Karim", at: h("10:42"), recu_at: h("13:05") },
         { id: "p2", correction: correctionsDemo.get("p2") ?? null, rattrapage: null, enceinte: "Chambre froide négative", valeur: -12, t_max: -18, conforme: false, action: "Denrées déplacées dans le congélateur du poste froid", par: "Karim", at: h("10:42") },
         { id: "p3", correction: correctionsDemo.get("p3") ?? null, rattrapage: null, enceinte: "Frigo poste chaud", valeur: 3.5, t_max: 4, conforme: true, action: null, par: "Karim", at: h("10:42") },
       ],

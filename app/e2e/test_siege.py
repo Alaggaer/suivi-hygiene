@@ -93,3 +93,9 @@ def test_saisie_oubliee_par_le_siege(page):
     page.click(".correction button:has-text('Porte mal fermée, refermée')")
     bouton.click()
     page.wait_for_selector("tr:has-text('Frigo poste chaud'):has-text('Saisi après coup par le siège')")
+
+def test_heure_reelle_et_reception(page):
+    ouvrir(page)
+    page.click(".s3-carte:has-text('DALLAS')")
+    page.wait_for_selector("h2:has-text('Températures')")
+    assert "reçue 13:05" in page.locator("tr:has-text('Chambre froide positive')").inner_text(), "saisie hors ligne : heure réelle + heure de réception"
