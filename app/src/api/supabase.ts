@@ -1,5 +1,5 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
-import type { Anomalie, AnomalieSiege, Api, Correction, Enceinte, Friteuse, EtatRestaurant, JourHistorique, Preuves, EtatFriteuse, Fournisseur, FournisseurNC, LigneSiege, SeuilsHuile, Site, Tache } from "../types";
+import type { Anomalie, AnomalieSiege, Api, Correction, LivraisonJour, Enceinte, Friteuse, EtatRestaurant, JourHistorique, Preuves, EtatFriteuse, Fournisseur, FournisseurNC, LigneSiege, SeuilsHuile, Site, Tache } from "../types";
 import { ErreurDefinitive, type Operation } from "../operations";
 
 /**
@@ -121,7 +121,18 @@ export function supabaseApi(url: string, cleAnon: string): Api {
       if (error || !data) throw new Error(error?.message ?? "Photo introuvable");
       return data.signedUrl;
     },
-    async fournisseurs() { return ok(await sb.from("fournisseurs").select("id, nom").eq("actif", true).order("nom")) as Fournisseur[]; },
+    async fournisseurs() {
+      return (ok(await sb.from("fournisseurs").select("id, nom, viande, jours_livraison").eq("actif", true).order("nom")) as (Fournisseur & { jours_livraison: number[] | null })[])
+        .map((f) => ({ id: f.id, nom: f.nom, viande: f.viande, jours: f.jours_livraison }));
+    },
+    async livraisonsDuJour(): Promise<LivraisonJour[]> {
+      const debut = new Date(); debut.setHours(0, 0, 0, 0);
+      const l = ok(await sb.from("livraisons").select("id, at, t_camion, conforme, action, produits_refuses, photos_bl_suite, range_at, fournisseurs(nom)")
+        .gte("at", debut.toISOString()).order("at")) as unknown as { id: string; at: string; t_camion: number; conforme: boolean; action: string | null;
+          produits_refuses: string | null; photos_bl_suite: string[] | null; range_at: string | null; fournisseurs: { nom: string } | null }[];
+      return l.map((x) => ({ id: x.id, fournisseur: x.fournisseurs?.nom ?? "Fournisseur", at: x.at, t_camion: Number(x.t_camion), conforme: x.conforme,
+        action: x.action, produits_refuses: x.produits_refuses, pages: 1 + (x.photos_bl_suite?.length ?? 0), range_at: x.range_at }));
+    },
     async anomaliesOuvertes() {
       return ok(await sb.from("anomalies").select("id, titre, categorie, gravite, statut, cree_at").neq("statut", "verifiee").order("cree_at", { ascending: false })) as Anomalie[];
     },
@@ -156,6 +167,7 @@ export function supabaseApi(url: string, cleAnon: string): Api {
           await inserer("livraisons", [{
             id: op.id, site_id, par: op.par, at_client: op.at_client, fournisseur_id: op.fournisseur_id,
             t_camion: op.t_camion, t_frais: op.t_frais ?? null, t_surgele: op.t_surgele ?? null, photo_bl: op.photo_bl,
+            photos_bl_suite: op.photos_bl_suite?.length ? op.photos_bl_suite : null, produits_refuses: op.produits_refuses ?? null,
             viande: op.viande, origine_ok: op.origine_ok ?? null, conforme: op.conforme,
             motifs: op.motifs ?? null, action: op.action ?? null, photo_nc: op.photo_nc ?? null,
           }]);

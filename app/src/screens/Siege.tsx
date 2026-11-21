@@ -286,6 +286,12 @@ function Fiche({ api, etat, anomalies, onChange, maintenant }: { api: Api; etat:
                       <span className={`pill ${l.range_at ? "none" : "warn"}`}>{l.range_at ? `rangée ${heure(l.range_at)}` : "rangement non validé"}</span>
                     </div>
                     {!l.conforme && <div className="hint">{(l.motifs ?? []).join(", ")} · {l.action}</div>}
+                    {l.produits_refuses && <div className="hint">Produits refusés : {l.produits_refuses}</div>}
+                    {!!l.photos_bl_suite?.length && (
+                      <div className="s3-pills">{l.photos_bl_suite.map((c, k) => (
+                        <button key={c} className="lien" onClick={async () => { try { setPhoto(urls[c] ?? await api.urlPhoto(c)); } catch { /* photo absente */ } }}>BL page {k + 2}</button>
+                      ))}</div>
+                    )}
                     {l.correction && <Corr c={l.correction} />}
                     <button className="lien ecran-seul" onClick={() => setACorriger({ table: "livraisons", id: l.id, libelle: `${l.fournisseur} à ${heure(l.at)}`, unite: null, bornes: null })}>Corriger</button>
                   </div>

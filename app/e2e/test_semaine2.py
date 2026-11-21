@@ -1,29 +1,72 @@
-from conftest import connecter, saisir, photographier
+from conftest import connecter, saisir, photographier, png
 
-def test_livraison_non_conforme_lance_le_minuteur_de_rangement(page):
+def page_bl(page, n=1):
+    for _ in range(n):
+        avant = page.locator(".liv-pages .liv-page:not(.ajout)").count()
+        page.locator('.liv-pages input[type="file"]').first.set_input_files({"name": "bl.png", "mimeType": "image/png", "buffer": png()})
+        page.wait_for_function(f"document.querySelectorAll('.liv-pages .liv-page:not(.ajout)').length > {avant}")
+
+def test_livraison_conforme_verdict_automatique(page):
     connecter(page)
     page.click(".act:has-text('Livraison')")
-    page.click("button.opt.big:has-text('Pomona')")
-    saisir(page, page.locator("button.val").nth(0), "6")     # camion hors seuil
-    saisir(page, page.locator("button.val").nth(1), "3")
-    page.click("text=Suivant")
-    assert page.locator("text=Suivant").is_disabled(), "Photo du BL obligatoire"
-    photographier(page)
-    page.click(".card button.opt:text-is('Oui')")             # viande
-    page.click("text=Non, elle manque")                       # origine absente
-    page.click("text=Suivant")
-    assert page.locator("text=Une température est hors seuil").count() == 1
-    page.click("button.bigbtn.bad:has-text('Non')")
-    assert page.locator("button.opt.sel:has-text('Température')").count() == 1, "Motif température pré-sélectionné"
-    page.click("text=Accepté sous réserve")
-    page.click("text=Enregistrer la livraison")
-    page.wait_for_selector(".home")
-    page.wait_for_selector(".tmr:has-text('Rangement · Pomona')")
-    # 2 anomalies : livraison non conforme + origine absente
-    page.wait_for_selector(".act .badge:text-is('3')", timeout=3000)
-    page.click(".tmr:has-text('Rangement · Pomona')")
-    page.wait_for_selector("text=Livraison rangée")
-    assert page.locator(".tmr").count() == 0
+    page.wait_for_selector("h1:has-text('Livraisons du jour')")
+    assert "attendu aujourd'hui" in page.locator(".liv-four").first.inner_text(), "fournisseurs attendus en premier"
+    page.click(".liv-four:has-text('Transgourmet')")
+    bouton = page.locator("button.bigbtn")
+    assert bouton.inner_text() == "Mesurez les températures"
+    saisir(page, page.locator(".liv-temp").nth(0), "2.5")
+    saisir(page, page.locator(".liv-temp").nth(1), "3")
+    page.click("text=Pas de surgelés")
+    assert bouton.inner_text() == "Photographiez le bon de livraison"
+    page_bl(page, 2)
+    assert page.locator(".liv-page:has-text('page 2')").count() == 1, "BL sur plusieurs pages"
+    page.click("text=Rien à signaler")
+    assert bouton.inner_text() == "Origine de la viande ?"
+    page.click(".liv-viande button:text-is('Oui')")
+    page.wait_for_selector(".liv-verdict.ok:has-text('Livraison conforme')")
+    bouton.click()
+    page.wait_for_selector(".liv-ligne:has-text('Transgourmet'):has-text('Conforme')")
+    assert "BL 2 pages" in page.locator(".liv-ligne:has-text('Transgourmet')").inner_text()
+    page.wait_for_selector(".tmr:has-text('Rangement · Transgourmet')")
+    page.click(".liv-ligne:has-text('Transgourmet') >> text=C'est rangé")
+    page.wait_for_selector(".liv-ligne:has-text('Transgourmet'):has-text('rangée à')")
+    assert page.locator(".tmr").count() == 0, "le minuteur de rangement disparaît"
+
+def test_livraison_hors_temperature_refus_partiel(page):
+    connecter(page)
+    page.click(".act:has-text('Livraison')")
+    page.click(".liv-four:has-text('Pomona')")
+    saisir(page, page.locator(".liv-temp").nth(0), "9")
+    saisir(page, page.locator(".liv-temp").nth(1), "3")
+    page.click("text=Pas de surgelés")
+    page_bl(page)
+    page.click("text=Rien à signaler")
+    page.wait_for_selector(".liv-verdict.bad:has-text('température')")
+    bouton = page.locator("button.bigbtn")
+    assert bouton.is_disabled() and bouton.inner_text() == "Indiquez ce que vous avez fait"
+    page.click(".liv-dec:has-text('Une partie refusée')")
+    assert bouton.inner_text() == "Notez les produits refusés"
+    page.fill(".liv-decision input.champ", "Salade, herbes fraîches")
+    bouton.click()
+    page.wait_for_selector(".liv-ligne:has-text('Pomona'):has-text('Refus partiel')")
+    assert "refusé : Salade, herbes fraîches" in page.locator(".liv-ligne:has-text('Pomona')").inner_text()
+    page.click("text=← Retour")
+    page.wait_for_selector(".act .badge:text-is('2')", timeout=3000)
+
+def test_livraison_tout_refusee_sans_rangement(page):
+    connecter(page)
+    page.click(".act:has-text('Livraison')")
+    page.click(".liv-four:has-text('Brake')")
+    saisir(page, page.locator(".liv-temp").nth(0), "2")
+    page.click("text=Pas de frais")
+    saisir(page, page.locator(".liv-temp").nth(2), "-12")
+    page_bl(page)
+    page.click("text=DLC trop courte")
+    page.click(".liv-dec:has-text('Tout refusé')")
+    assert page.locator("button.bigbtn").inner_text() == "Valider le refus"
+    page.click("button.bigbtn")
+    page.wait_for_selector(".liv-ligne:has-text('Brake'):has-text('rien à ranger')")
+    assert page.locator(".tmr").count() == 0, "pas de minuteur de rangement quand tout est refusé"
 
 def test_produit_utilise_photo_puis_famille(page):
     connecter(page)

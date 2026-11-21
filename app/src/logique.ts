@@ -219,3 +219,27 @@ export const BORNES_LIVRAISON: Record<"camion" | "frais" | "surgele", Bornes> = 
   surgele: { min: -40, max: 5, message: "Produit surgelé : entre −40 et +5 °C." },
 };
 export const dansBornes = (v: number, b: Bornes) => v >= b.min && v <= b.max;
+
+/* ---------- Réception de livraison : verdict automatique ---------- */
+export type ProblemeLivraison = "Emballage abîmé" | "DLC trop courte" | "Produit manquant" | "Produit non commandé";
+export const PROBLEMES_LIVRAISON: ProblemeLivraison[] = ["Emballage abîmé", "DLC trop courte", "Produit manquant", "Produit non commandé"];
+export const DECISIONS_LIVRAISON = [
+  { cle: "Tout refusé", detail: "le camion repart avec tout" },
+  { cle: "Une partie refusée", detail: "on garde le reste" },
+  { cle: "Accepté sous réserve", detail: "réserve écrite sur le BL" },
+] as const;
+/**
+ * Verdict calculé, jamais choisi : non conforme dès qu'une température dépasse son seuil, qu'un problème est signalé
+ * ou que l'origine d'une viande manque. `motifs` sert à l'anomalie et aux statistiques fournisseurs.
+ */
+export function verdictLivraison(r: { camion?: number; frais?: number; surgele?: number; problemes: string[]; viande: boolean; origine: boolean | null }): { conforme: boolean; motifs: string[]; graveTemperature: boolean } {
+  const temp = !temperaturesLivraisonOk({ camion: r.camion, frais: r.frais, surgele: r.surgele });
+  const motifs = [...(temp ? ["Température"] : []), ...r.problemes, ...(r.viande && r.origine === false ? ["Origine viande absente"] : [])];
+  return { conforme: motifs.length === 0, motifs, graveTemperature: temp };
+}
+/** Fournisseurs attendus aujourd'hui en premier (jours de livraison habituels), puis les autres par nom. */
+export function trierFournisseurs<T extends { nom: string; jours?: number[] | null }>(l: T[], maintenant = new Date()): (T & { attendu: boolean })[] {
+  const j = ((maintenant.getDay() + 6) % 7) + 1;   // 1 = lundi … 7 = dimanche
+  return l.map((f) => ({ ...f, attendu: !!f.jours?.includes(j) }))
+    .sort((a, b) => Number(b.attendu) - Number(a.attendu) || a.nom.localeCompare(b.nom, "fr"));
+}

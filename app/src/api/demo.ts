@@ -1,4 +1,4 @@
-import type { Api, Anomalie, AnomalieSiege, Correction, Rattrapage, EtatRestaurant, EtatFriteuse, Preuves, Profil, Tache } from "../types";
+import type { Api, Anomalie, AnomalieSiege, Correction, LivraisonJour, Rattrapage, EtatRestaurant, EtatFriteuse, Preuves, Profil, Tache } from "../types";
 import { ErreurDefinitive, type Operation } from "../operations";
 import { transitionPermise } from "../logique";
 
@@ -38,6 +38,8 @@ const etatHuile: EtatFriteuse[] = [
   { friteuse_id: "f3", jours_utilisation: 14, dernier_changement: iso(t0 - 16 * JOUR), aujourd_hui_at: null, aujourd_hui_polaires: null, aujourd_hui_non_utilisee: null },
   { friteuse_id: "f4", jours_utilisation: 2, dernier_changement: iso(t0 - 3 * JOUR), aujourd_hui_at: null, aujourd_hui_polaires: null, aujourd_hui_non_utilisee: null },
 ];
+/** Livraisons reçues pendant la démo. */
+const livraisonsDemo: LivraisonJour[] = [];
 /** Saisies oubliées ajoutées par le siège pendant la démo. */
 const rattrapagesDemo: Rattrapage[] = [];
 /** Corrections faites par le siège pendant la démo (par id de saisie). */
@@ -75,7 +77,15 @@ export const demoApi: Api = {
   friteuses: () => attendre([1, 2, 3, 4].map((i) => ({ id: `f${i}`, nom: `Friteuse ${i}`, litres: 25 }))),
   seuilsHuile: () => attendre({ orange: 20, rouge: 25, jours_max: 14 }),
   etatFriteuses: () => attendre(etatHuile.map((e) => ({ ...e }))),
-  fournisseurs: () => attendre(["Transgourmet", "Pomona", "Metro", "Brake", "Boucherie (viandes)", "Boulangerie"].map((nom, i) => ({ id: `f${i}`, nom }))),
+  fournisseurs: () => {
+    const tous = [1, 2, 3, 4, 5, 6, 7];
+    return attendre([
+      { id: "fo0", nom: "Transgourmet", viande: true, jours: tous }, { id: "fo1", nom: "Pomona", viande: false, jours: tous },
+      { id: "fo2", nom: "Metro", viande: true, jours: [] }, { id: "fo3", nom: "Brake", viande: false, jours: [] },
+      { id: "fo4", nom: "Boucherie (viandes)", viande: true, jours: [] }, { id: "fo5", nom: "Boulangerie", viande: false, jours: [] },
+    ]);
+  },
+  livraisonsDuJour: () => attendre(livraisonsDemo.map((l) => ({ ...l }))),
   anomaliesSiege: () => attendre(anomaliesGroupe.map((a) => ({ ...a }))),
   etatRestaurants: async () => {
     // État du jour d'exemple, cohérent avec les anomalies du groupe ci-dessus.
@@ -238,9 +248,19 @@ export const demoApi: Api = {
         });
         terminer(op.tache_id);   // la tablette n'envoie la tâche que lorsque toutes les friteuses sont faites
         break;
-      case "livraison": if (nouveau(op.id)) recuDemo.livraisons++; break;
+      case "livraison":
+        if (nouveau(op.id)) {
+          recuDemo.livraisons++;
+          livraisonsDemo.push({ id: op.id, fournisseur: op.fournisseur_nom, at: op.at_client, t_camion: op.t_camion, conforme: op.conforme,
+            action: op.action ?? null, produits_refuses: op.produits_refuses ?? null, pages: 1 + (op.photos_bl_suite?.length ?? 0), range_at: null });
+        }
+        break;
       case "utilisation": if (nouveau(op.id)) recuDemo.utilisations++; break;
-      case "livraison_rangee": break;
+      case "livraison_rangee": {
+        const l = livraisonsDemo.find((x) => x.id === op.livraison_id);
+        if (l && !l.range_at) l.range_at = op.at_client;
+        break;
+      }
       case "minuteur": nouveau(op.id); break;
       case "anomalie_statut": {
         const a = anomalies.find((x) => x.id === op.anomalie_id);

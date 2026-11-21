@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  BORNES_HUILE, bornesReleve, cheminPhoto, dansBornes, etatAvecEnAttente, etatTache, jourHuile, MIN, niveauAgeHuile, niveauEscalade, niveauHuile, service, tachesALheure,
+  BORNES_HUILE, bornesReleve, trierFournisseurs, verdictLivraison, cheminPhoto, dansBornes, etatAvecEnAttente, etatTache, jourHuile, MIN, niveauAgeHuile, niveauEscalade, niveauHuile, service, tachesALheure,
   temperatureConforme, temperaturesLivraisonOk, trierTaches,
 } from "./logique";
 
@@ -154,5 +154,22 @@ describe("valeurs vraisemblables", () => {
   it("huile entre 0 et 40 %", () => {
     expect(dansBornes(41, BORNES_HUILE)).toBe(false);
     expect(dansBornes(24.5, BORNES_HUILE)).toBe(true);
+  });
+});
+
+describe("réception de livraison", () => {
+  const base = { problemes: [] as string[], viande: false, origine: null };
+  it("verdict calculé : conforme seulement si tout est dans les seuils et rien n'est signalé", () => {
+    expect(verdictLivraison({ ...base, camion: 2.5, frais: 3 })).toEqual({ conforme: true, motifs: [], graveTemperature: false });
+    expect(verdictLivraison({ ...base, camion: 9, frais: 3 })).toEqual({ conforme: false, motifs: ["Température"], graveTemperature: true });
+    expect(verdictLivraison({ ...base, camion: 2, surgele: -12 }).conforme).toBe(false);
+    expect(verdictLivraison({ ...base, camion: 2, problemes: ["DLC trop courte"] })).toEqual({ conforme: false, motifs: ["DLC trop courte"], graveTemperature: false });
+    expect(verdictLivraison({ camion: 2, problemes: [], viande: true, origine: false }).motifs).toEqual(["Origine viande absente"]);
+    expect(verdictLivraison({ camion: 2, problemes: [], viande: false, origine: false }).conforme).toBe(true);
+  });
+  it("fournisseurs attendus aujourd'hui en premier", () => {
+    const samedi = new Date("2026-11-21T09:00:00");
+    const l = trierFournisseurs([{ nom: "B", jours: [1] }, { nom: "A", jours: [] }, { nom: "C", jours: [6] }], samedi);
+    expect(l.map((f) => `${f.nom}${f.attendu ? "*" : ""}`)).toEqual(["C*", "A", "B"]);
   });
 });

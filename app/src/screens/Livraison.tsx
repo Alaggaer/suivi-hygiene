@@ -1,148 +1,284 @@
-import { useEffect, useState } from "react";
-import type { Fournisseur } from "../types";
+import { useEffect, useId, useMemo, useState } from "react";
+import type { Fournisseur, LivraisonJour } from "../types";
+import type { Entree } from "../hors-ligne/stockage";
 import { nouvelId, useContexte, useEnregistrer } from "../contexte";
-import { cheminPhoto, MIN, SEUILS_LIVRAISON, temperaturesLivraisonOk, BORNES_LIVRAISON } from "../logique";
+import {
+  BORNES_LIVRAISON, cheminPhoto, DECISIONS_LIVRAISON, MIN, PROBLEMES_LIVRAISON, SEUILS_LIVRAISON, trierFournisseurs, verdictLivraison,
+} from "../logique";
 import type { Minuteur } from "../minuteurs";
-import { ChampPhoto } from "../ui/Photo";
-import { PaveNumerique, temp, useToast } from "../ui/outils";
+import { compresserPhoto } from "../photos";
+import { useRangerLivraison } from "../rangement";
+import { duree, PaveNumerique, temp, useMaintenant, useToast } from "../ui/outils";
 
-const MOTIFS = ["Température", "Emballage abîmé", "DLC trop courte", "Produit manquant", "Produit non commandé", "Origine viande absente"];
-const ACTIONS = ["Produit refusé", "Accepté sous réserve"];
 type Champ = "camion" | "frais" | "surgele";
-const LIBELLES: Record<Champ, string> = { camion: "Température du camion", frais: "Produits frais (1 produit au hasard)", surgele: "Produits surgelés (si livrés)" };
+const LIBELLES: Record<Champ, string> = { camion: "Camion", frais: "Frais", surgele: "Surgelés" };
+const heure = (iso: string) => new Date(iso).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
 
-export function Livraison({ onFini, lancerMinuteur }: { onFini: () => void; lancerMinuteur: (m: Minuteur) => void }) {
+/**
+ * Livraisons : la liste du jour (fournisseurs attendus en premier, livraisons reçues à ranger),
+ * puis la réception sur une seule page, avec un verdict calculé (jamais choisi).
+ */
+export function Livraison({ onFini, lancerMinuteur, minuteurs, retirerMinuteur, enAttente = [] }: {
+  onFini: () => void; lancerMinuteur: (m: Minuteur) => void; minuteurs: Minuteur[]; retirerMinuteur: (id: string) => void; enAttente?: Entree[];
+}) {
+  const [four, setFour] = useState<Fournisseur | null>(null);
+  if (four) return <Reception four={four} onAnnuler={() => setFour(null)} onFini={() => setFour(null)} lancerMinuteur={lancerMinuteur} />;
+  return <ListeDuJour onRetour={onFini} onChoisir={setFour} minuteurs={minuteurs} retirerMinuteur={retirerMinuteur} enAttente={enAttente} />;
+}
+
+/* ---------- Liste du jour ---------- */
+
+function ListeDuJour({ onRetour, onChoisir, minuteurs, retirerMinuteur, enAttente }: {
+  onRetour: () => void; onChoisir: (f: Fournisseur) => void; minuteurs: Minuteur[]; retirerMinuteur: (id: string) => void; enAttente: Entree[];
+}) {
+  const { api } = useContexte();
+  const toast = useToast();
+  const ranger = useRangerLivraison(minuteurs, retirerMinuteur);
+  const maintenant = useMaintenant(15_000);
+  const [fournisseurs, setFournisseurs] = useState<Fournisseur[]>([]);
+  const [serveur, setServeur] = useState<LivraisonJour[]>([]);
+  const [erreur, setErreur] = useState<string | null>(null);
+
+  useEffect(() => {
+    api.fournisseurs().then(setFournisseurs).catch((e) => setErreur(e.message));
+    api.livraisonsDuJour().then(setServeur).catch(() => setServeur([]));
+  }, [api]);
+
+  // Les saisies encore sur la tablette (hors ligne ou en cours d'envoi) apparaissent tout de suite.
+  const recues = useMemo(() => {
+    const l = serveur.map((x) => ({ ...x }));
+    for (const { op } of enAttente.filter((e) => e.statut === "attente")) {
+      if (op.type === "livraison" && !l.some((x) => x.id === op.id)) {
+        l.push({ id: op.id, fournisseur: op.fournisseur_nom, at: op.at_client, t_camion: op.t_camion, conforme: op.conforme, action: op.action ?? null,
+          produits_refuses: op.produits_refuses ?? null, pages: 1 + (op.photos_bl_suite?.length ?? 0), range_at: null });
+      }
+      if (op.type === "livraison_rangee") { const x = l.find((y) => y.id === op.livraison_id); if (x && !x.range_at) x.range_at = op.at_client; }
+    }
+    return l.sort((a, b) => a.at.localeCompare(b.at));
+  }, [serveur, enAttente]);
+  const tries = trierFournisseurs(fournisseurs);
+
+  return (
+    <div className="screen">
+      <button className="back" onClick={onRetour}>← Retour</button>
+      <h1>Livraisons du jour</h1>
+      {erreur && <p className="pill bad">{erreur}</p>}
+      <section className="card">
+        <h2 className="liv-titre">Un camion arrive ? Touchez le fournisseur</h2>
+        <div className="liv-fournisseurs">
+          {tries.map((f) => (
+            <button key={f.id} className={`liv-four ${f.attendu ? "attendu" : ""}`} onClick={() => onChoisir(f)}>
+              <b>{f.nom}</b>
+              <span>{[f.attendu && "attendu aujourd'hui", f.viande && "viande"].filter(Boolean).join(" · ")}</span>
+            </button>
+          ))}
+        </div>
+      </section>
+      <section className="card">
+        <h2 className="liv-titre">Déjà reçues aujourd'hui</h2>
+        {!recues.length && <p className="hint">Aucune livraison reçue pour l'instant.</p>}
+        {recues.map((l) => {
+          const m = minuteurs.find((x) => x.type === "rangement" && x.ref === l.id);
+          const refuseTout = l.action === "Tout refusé";
+          const [statut, cls] = l.conforme ? ["Conforme", "ok"] : refuseTout ? ["Tout refusé", "bad"] : l.action === "Une partie refusée" ? ["Refus partiel", "bad"] : ["Sous réserve", "warn"];
+          return (
+            <div key={l.id} className="liv-ligne">
+              <span className="hint num">{heure(l.at)}</span>
+              <span><b>{l.fournisseur}</b> <span className="hint">· camion {temp(l.t_camion)} · BL {l.pages} page{l.pages > 1 ? "s" : ""}{l.produits_refuses ? ` · refusé : ${l.produits_refuses}` : ""}</span></span>
+              <span className={`pill ${cls}`}>{statut}</span>
+              {l.range_at || refuseTout
+                ? <span className="hint">{refuseTout ? "rien à ranger" : `rangée à ${heure(l.range_at!)}`}</span>
+                : <span className="liv-ranger">
+                    {m && <span className={`hint ${maintenant - m.debut > m.duree ? "t-bad" : ""}`}>{duree(Math.abs(m.debut + m.duree - maintenant))} {maintenant - m.debut > m.duree ? "de retard" : "restantes"}</span>}
+                    <button className="opt sel" onClick={async () => { await ranger(l.id, l.fournisseur); toast("Livraison rangée"); }}>C'est rangé</button>
+                  </span>}
+            </div>
+          );
+        })}
+      </section>
+    </div>
+  );
+}
+
+/* ---------- Réception sur une page ---------- */
+
+function Reception({ four, onAnnuler, onFini, lancerMinuteur }: { four: Fournisseur; onAnnuler: () => void; onFini: () => void; lancerMinuteur: (m: Minuteur) => void }) {
   const { api, site } = useContexte();
   const enregistrer = useEnregistrer();
   const toast = useToast();
-  const [fournisseurs, setFournisseurs] = useState<Fournisseur[]>([]);
-  const [etape, setEtape] = useState(1);
-  const [four, setFour] = useState<Fournisseur | null>(null);
-  const [t, setT] = useState<Partial<Record<Champ, number>>>({});
+  const [t, setT] = useState<Partial<Record<Champ, number | "aucun">>>({});
   const [pave, setPave] = useState<Champ | null>(null);
-  const [bl, setBl] = useState<Blob | null>(null);
-  const [viande, setViande] = useState<boolean | null>(null);
+  const [pages, setPages] = useState<Blob[]>([]);
+  const [rien, setRien] = useState(false);
+  const [problemes, setProblemes] = useState<string[]>([]);
   const [origine, setOrigine] = useState<boolean | null>(null);
-  const [conforme, setConforme] = useState<boolean | null>(null);
-  const [motifs, setMotifs] = useState<string[]>([]);
-  const [action, setAction] = useState<string | null>(null);
+  const [decision, setDecision] = useState<string | null>(null);
+  const [refuses, setRefuses] = useState("");
   const [photoNc, setPhotoNc] = useState<Blob | null>(null);
   const [envoi, setEnvoi] = useState(false);
   const [erreur, setErreur] = useState<string | null>(null);
 
-  useEffect(() => { api.fournisseurs().then(setFournisseurs).catch((e) => setErreur(e.message)); }, [api]);
-
-  const temperaturesOk = temperaturesLivraisonOk({ camion: t.camion, frais: t.frais, surgele: t.surgele });
-  const pret = conforme === true || (conforme === false && motifs.length > 0 && action !== null);
+  const num = (k: Champ) => (typeof t[k] === "number" ? (t[k] as number) : undefined);
+  const v = verdictLivraison({ camion: num("camion"), frais: num("frais"), surgele: num("surgele"), problemes, viande: !!four.viande, origine });
+  const tempsOk = t.camion !== undefined && t.frais !== undefined && t.surgele !== undefined;
+  const controleOk = rien || problemes.length > 0;
+  const origineOk = !four.viande || origine !== null;
+  const decisionOk = v.conforme || (!!decision && (decision !== "Une partie refusée" || refuses.trim().length >= 3));
+  const etapesOk = tempsOk && pages.length > 0 && controleOk && origineOk;
+  const pret = etapesOk && decisionOk;
+  const manque = !tempsOk ? "Mesurez les températures" : !pages.length ? "Photographiez le bon de livraison" : !controleOk ? "Contrôle des produits : rien à signaler ?"
+    : !origineOk ? "Origine de la viande ?" : !decisionOk ? (decision === "Une partie refusée" ? "Notez les produits refusés" : "Indiquez ce que vous avez fait") : null;
 
   async function valider() {
-    if (!four || !bl || t.camion === undefined) return;
+    if (!pret || typeof t.camion !== "number") return;
     setEnvoi(true); setErreur(null);
     try {
       const id = nouvelId(), maintenant = Date.now();
-      const photos = [{ chemin: cheminPhoto(site.id, nouvelId(), maintenant), blob: bl }];
-      if (photoNc) photos.push({ chemin: cheminPhoto(site.id, nouvelId(), maintenant), blob: photoNc });
+      const photos = pages.map((blob) => ({ chemin: cheminPhoto(site.id, nouvelId(), maintenant), blob }));
+      const nc = photoNc ? { chemin: cheminPhoto(site.id, nouvelId(), maintenant), blob: photoNc } : null;
       await enregistrer({
         type: "livraison", id, fournisseur_id: four.id, fournisseur_nom: four.nom,
-        t_camion: t.camion, t_frais: t.frais, t_surgele: t.surgele, photo_bl: photos[0].chemin,
-        viande: !!viande, origine_ok: viande ? origine ?? undefined : undefined,
-        conforme: !!conforme, motifs: conforme ? undefined : motifs, action: conforme ? undefined : action ?? undefined,
-        photo_nc: photos[1]?.chemin,
-      }, photos);
-      const anomalies = [];
-      if (!conforme) anomalies.push({
-        id: nouvelId(), source: "livraison", ref_id: id, categorie: "Livraison",
-        gravite: motifs.includes("Température") ? "majeure" as const : "mineure" as const,
-        titre: `Livraison ${four.nom} non conforme : ${motifs.join(", ")} · ${action}`, photo: photos[1]?.chemin,
-      });
-      if (viande && origine === false) anomalies.push({
-        id: nouvelId(), source: "livraison", ref_id: id, categorie: "Fournisseur", gravite: "mineure" as const,
-        titre: `Origine de la viande absente · ${four.nom}`,
-      });
-      if (anomalies.length) await enregistrer({ type: "anomalies", lignes: anomalies });
-      lancerMinuteur({ id: nouvelId(), type: "rangement", libelle: `Rangement · ${four.nom}`, debut: maintenant, duree: 15 * MIN, alerte: 10 * MIN, ref: id, donnees: { fournisseur: four.nom } });
-      toast("Livraison enregistrée · minuteur de rangement lancé");
+        t_camion: t.camion, t_frais: num("frais"), t_surgele: num("surgele"),
+        photo_bl: photos[0].chemin, photos_bl_suite: photos.slice(1).map((p) => p.chemin),
+        viande: !!four.viande, origine_ok: four.viande ? origine ?? undefined : undefined,
+        conforme: v.conforme, motifs: v.conforme ? undefined : v.motifs, action: v.conforme ? undefined : decision ?? undefined,
+        produits_refuses: !v.conforme && refuses.trim() ? refuses.trim() : undefined, photo_nc: nc?.chemin,
+      }, nc ? [...photos, nc] : photos);
+      if (!v.conforme) await enregistrer({ type: "anomalies", lignes: [{
+        id: nouvelId(), source: "livraison", ref_id: id, categorie: "Livraison", gravite: v.graveTemperature ? "majeure" : "mineure",
+        titre: `Livraison ${four.nom} non conforme : ${v.motifs.join(", ")} · ${decision}${refuses.trim() ? ` (${refuses.trim()})` : ""}`, photo: nc?.chemin,
+      }] });
+      if (decision === "Tout refusé") {
+        await enregistrer({ type: "livraison_rangee", livraison_id: id });   // rien à ranger : pas de minuteur
+        toast("Livraison refusée enregistrée");
+      } else {
+        lancerMinuteur({ id: nouvelId(), type: "rangement", libelle: `Rangement · ${four.nom}`, debut: maintenant, duree: 15 * MIN, alerte: 10 * MIN, ref: id, donnees: { fournisseur: four.nom } });
+        toast("Livraison enregistrée · rangement : 15 min");
+      }
       onFini();
     } catch (e) { setErreur((e as Error).message); setEnvoi(false); }
   }
 
-  const tete = (
-    <>
-      <button className="back" onClick={() => (etape > 1 ? setEtape(etape - 1) : onFini())}>← {etape > 1 ? "Étape précédente" : "Retour"}</button>
-      <div className="steps" aria-label={`Étape ${etape} sur 4`}>{[1, 2, 3, 4].map((i) => <i key={i} className={i <= etape ? "on" : ""} />)}</div>
-    </>
-  );
-
-  if (etape === 1) return (
-    <div className="screen">{tete}<h1>Quel fournisseur ?</h1>
-      {erreur && <p className="pill bad">{erreur}</p>}
-      <div className="opts">{fournisseurs.map((f) => <button key={f.id} className="opt big" onClick={() => { setFour(f); setEtape(2); }}>{f.nom}</button>)}</div>
-    </div>
-  );
-
-  if (etape === 2) return (
-    <div className="screen">{tete}<h1>Températures · {four?.nom}</h1>
-      <p className="hint">Thermomètre laser pour le camion, sonde pour les produits.</p>
-      <div className="rows">
-        {(["camion", "frais", "surgele"] as Champ[]).map((k) => {
-          const v = t[k], a = v !== undefined, ok = a && v <= SEUILS_LIVRAISON[k];
-          return (
-            <div key={k} className={`row ${a && !ok ? "bad" : ""}`}>
-              <span><span className="n">{LIBELLES[k]}</span><br /><span className="seuil">Maximum {temp(SEUILS_LIVRAISON[k])}</span></span>
-              <span className={`pill ${a ? (ok ? "ok" : "bad") : "none"}`}>{a ? (ok ? "Conforme" : "Hors seuil") : k === "surgele" ? "Facultatif" : "À mesurer"}</span>
-              <button className={`val num ${a ? "filled" : ""}`} onClick={() => setPave(k)}>{a ? temp(v) : "Saisir"}</button>
-            </div>
-          );
-        })}
-      </div>
-      <button className="bigbtn" disabled={t.camion === undefined || t.frais === undefined} onClick={() => setEtape(3)}>Suivant</button>
-      {pave && <PaveNumerique titre={LIBELLES[pave]} unite="°C" signe bornes={BORNES_LIVRAISON[pave]} onFermer={() => setPave(null)} onValider={(v) => { setT({ ...t, [pave]: v }); setPave(null); }} />}
-    </div>
-  );
-
-  if (etape === 3) return (
-    <div className="screen">{tete}<h1>Bon de livraison</h1>
-      <ChampPhoto texte="Photo du bon de livraison" photo={bl} onPhoto={setBl} demo={api.mode === "demo"} />
-      <div className="card"><b>Il y a de la viande dans cette livraison ?</b>
-        <div className="opts" style={{ marginTop: 10 }}>
-          <button className={`opt ${viande === true ? "sel" : ""}`} onClick={() => setViande(true)}>Oui</button>
-          <button className={`opt ${viande === false ? "sel" : ""}`} onClick={() => { setViande(false); setOrigine(null); }}>Non</button>
-        </div>
-        {viande && <>
-          <p style={{ margin: "14px 0 8px" }}><b>L'origine (pays d'élevage et d'abattage) est indiquée sur le BL ou l'étiquette ?</b></p>
-          <div className="opts">
-            <button className={`opt ${origine === true ? "sel" : ""}`} onClick={() => setOrigine(true)}>Oui</button>
-            <button className={`opt ${origine === false ? "sel" : ""}`} onClick={() => setOrigine(false)}>Non, elle manque</button>
-          </div>
-        </>}
-      </div>
-      <button className="bigbtn" disabled={!bl || viande === null || (viande && origine === null)} onClick={() => setEtape(4)}>Suivant</button>
-    </div>
-  );
+  const basculer = (p: string) => { setRien(false); setProblemes(problemes.includes(p) ? problemes.filter((x) => x !== p) : [...problemes, p]); };
 
   return (
-    <div className="screen">{tete}<h1>La livraison est conforme ?</h1>
-      {!temperaturesOk && <p className="pill bad" style={{ alignSelf: "flex-start" }}>Une température est hors seuil</p>}
-      <div className="btnrow">
-        <button className="bigbtn ok" aria-pressed={conforme === true} style={conforme === true ? { outline: "4px solid var(--ink)" } : undefined} onClick={() => setConforme(true)}>Oui, conforme</button>
-        <button className="bigbtn bad" aria-pressed={conforme === false} style={conforme === false ? { outline: "4px solid var(--ink)" } : undefined}
-          onClick={() => { setConforme(false); if (!temperaturesOk && !motifs.includes("Température")) setMotifs([...motifs, "Température"]); }}>Non</button>
+    <div className="screen reception">
+      <div className="reception-tete">
+        <button className="back" onClick={onAnnuler}>← Annuler</button>
+        <h1>Réception {four.nom}</h1>
+        {four.viande && <span className="hint">viande</span>}
       </div>
-      {conforme === false && (
-        <div className="card"><b>Pourquoi ?</b>
-          <div className="opts" style={{ margin: "10px 0 16px" }}>
-            {MOTIFS.map((m) => <button key={m} className={`opt ${motifs.includes(m) ? "sel" : ""}`} onClick={() => setMotifs(motifs.includes(m) ? motifs.filter((x) => x !== m) : [...motifs, m])}>{m}</button>)}
+
+      <div className="reception-haut">
+        <section className="card">
+          <h2 className="liv-titre">1 · Températures</h2>
+          <div className="liv-temps">
+            {(["camion", "frais", "surgele"] as Champ[]).map((k) => {
+              const val = t[k], mesure = typeof val === "number", ko = mesure && (val as number) > SEUILS_LIVRAISON[k];
+              return (
+                <div key={k} className="liv-temp-case">
+                  <button className={`liv-temp ${val === undefined ? "" : val === "aucun" ? "aucun" : ko ? "bad" : "ok"}`} onClick={() => setPave(k)}>
+                    <span>{LIBELLES[k]} · max {temp(SEUILS_LIVRAISON[k])}</span>
+                    <b>{val === undefined ? "Mesurer" : val === "aucun" ? "Aucun" : temp(val as number)}</b>
+                  </button>
+                  {k !== "camion" && val === undefined && <button className="lien" onClick={() => setT({ ...t, [k]: "aucun" })}>{k === "frais" ? "Pas de frais" : "Pas de surgelés"}</button>}
+                </div>
+              );
+            })}
           </div>
-          <b>Qu'avez-vous fait ?</b>
-          <div className="opts" style={{ margin: "10px 0 16px" }}>
-            {ACTIONS.map((a) => <button key={a} className={`opt ${action === a ? "sel" : ""}`} onClick={() => setAction(a)}>{a}</button>)}
-          </div>
-          <ChampPhoto texte="Photo du problème (facultatif)" photo={photoNc} onPhoto={setPhotoNc} demo={api.mode === "demo"} />
+        </section>
+        <section className="card">
+          <h2 className="liv-titre">2 · Bon de livraison</h2>
+          <PagesBL pages={pages} onAjouter={(b) => setPages([...pages, b])} onRetirer={(i) => setPages(pages.filter((_, j) => j !== i))} demo={api.mode === "demo"} />
+        </section>
+      </div>
+
+      <section className="card">
+        <h2 className="liv-titre">3 · Contrôle des produits</h2>
+        <div className="opts">
+          <button className={`opt ${rien ? "sel ok" : ""}`} onClick={() => { setRien(true); setProblemes([]); }}>Rien à signaler</button>
+          <span className="hint" style={{ alignSelf: "center" }}>ou un problème :</span>
+          {PROBLEMES_LIVRAISON.map((p) => <button key={p} className={`opt ${problemes.includes(p) ? "sel" : ""}`} onClick={() => basculer(p)}>{p}</button>)}
         </div>
-      )}
-      {conforme === true && !temperaturesOk && <p className="hint">Une température est hors seuil : vérifiez avant de déclarer la livraison conforme.</p>}
+        {four.viande && (
+          <div className="liv-viande">
+            <b>Viande : origine indiquée (pays d'élevage et d'abattage) ?</b>
+            <button className={`opt ${origine === true ? "sel ok" : ""}`} onClick={() => setOrigine(true)}>Oui</button>
+            <button className={`opt ${origine === false ? "sel" : ""}`} onClick={() => setOrigine(false)}>Non, elle manque</button>
+          </div>
+        )}
+      </section>
+
+      {etapesOk && (v.conforme
+        ? <div className="liv-verdict ok"><b>Livraison conforme</b> · calculé automatiquement</div>
+        : <>
+            <div className="liv-verdict bad"><b>Non conforme : {v.motifs.join(", ").toLowerCase()}</b> · détecté automatiquement</div>
+            <section className="card liv-decision">
+              <h2 className="liv-titre">4 · Qu'avez-vous fait ? (obligatoire)</h2>
+              <div className="liv-decisions">
+                {DECISIONS_LIVRAISON.map((d) => (
+                  <button key={d.cle} className={`liv-dec ${decision === d.cle ? "sel" : ""}`} onClick={() => setDecision(d.cle)}><b>{d.cle}</b><span>{d.detail}</span></button>
+                ))}
+              </div>
+              {decision && decision !== "Tout refusé" && (
+                <label className="champ-bloc">{decision === "Une partie refusée" ? "Produits refusés (obligatoire)" : "Réserve notée (facultatif)"}
+                  <input className="champ" value={refuses} onChange={(e) => setRefuses(e.target.value)} placeholder={decision === "Une partie refusée" ? "Ex. salade, tomates cerises" : "Ex. carton écrasé, à vérifier"} />
+                </label>
+              )}
+              {decision && <PagesBL pages={photoNc ? [photoNc] : []} max={1} libelle="Photo du problème (facultatif)" onAjouter={setPhotoNc} onRetirer={() => setPhotoNc(null)} demo={api.mode === "demo"} />}
+            </section>
+          </>)}
+
       {erreur && <p className="pill bad">{erreur}</p>}
-      <button className="bigbtn" disabled={!pret || envoi} onClick={valider}>{envoi ? "Enregistrement…" : "Enregistrer la livraison"}</button>
+      <button className="bigbtn" disabled={!pret || envoi} onClick={valider}>
+        {envoi ? "Enregistrement…" : manque ?? (decision === "Tout refusé" ? "Valider le refus" : "Valider · lancer le rangement (15 min)")}
+      </button>
+      {pave && (
+        <PaveNumerique titre={`${LIBELLES[pave]} · max ${temp(SEUILS_LIVRAISON[pave])}`} unite="°C" signe bornes={BORNES_LIVRAISON[pave]}
+          onFermer={() => setPave(null)} onValider={(x) => { setT({ ...t, [pave]: x }); setPave(null); }} />
+      )}
+    </div>
+  );
+}
+
+/** Pages photographiées (bon de livraison sur plusieurs pages, ou photo d'un problème). */
+function PagesBL({ pages, onAjouter, onRetirer, demo, max = 6, libelle }: {
+  pages: Blob[]; onAjouter: (b: Blob) => void; onRetirer: (i: number) => void; demo?: boolean; max?: number; libelle?: string;
+}) {
+  const id = useId();
+  const [urls, setUrls] = useState<string[]>([]);
+  const [traitement, setTraitement] = useState(false);
+  useEffect(() => {
+    const u = pages.map((p) => URL.createObjectURL(p));
+    setUrls(u);
+    return () => u.forEach((x) => URL.revokeObjectURL(x));
+  }, [pages]);
+  async function choisir(f: File | undefined) {
+    if (!f) return;
+    setTraitement(true);
+    try { onAjouter(await compresserPhoto(f)); } finally { setTraitement(false); }
+  }
+  function simuler() {
+    const c = document.createElement("canvas"); c.width = 240; c.height = 320;
+    const g = c.getContext("2d")!; g.fillStyle = "#f4f6f8"; g.fillRect(0, 0, 240, 320);
+    g.fillStyle = "#14202b"; g.font = "22px sans-serif"; g.fillText(`Page ${pages.length + 1}`, 70, 160);
+    c.toBlob((b) => b && onAjouter(b), "image/webp", 0.7);
+  }
+  return (
+    <div className="liv-pages">
+      {libelle && <b className="liv-pages-libelle">{libelle}</b>}
+      {urls.map((u, i) => (
+        <div key={u} className="liv-page" style={{ backgroundImage: `url(${u})` }}>
+          <span>{max > 1 ? `page ${i + 1}` : "photo"}</span>
+          <button aria-label="Retirer cette photo" onClick={() => onRetirer(i)}>×</button>
+        </div>
+      ))}
+      {pages.length < max && (
+        <label htmlFor={id} className="liv-page ajout">{traitement ? "…" : pages.length ? "+ page" : max > 1 ? "Photo du BL" : "+ photo"}
+          <input id={id} type="file" accept="image/*" capture="environment" onChange={(e) => { void choisir(e.target.files?.[0]); e.target.value = ""; }} />
+        </label>
+      )}
+      {demo && pages.length < max && <button type="button" className="sim" onClick={simuler}>Simuler</button>}
     </div>
   );
 }

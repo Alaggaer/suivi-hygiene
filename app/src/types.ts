@@ -25,7 +25,13 @@ export interface Tache {
   escalade: number;          // 0 rien, 1 chef prévenu, 2 responsable prévenu
 }
 
-export interface Fournisseur { id: string; nom: string }
+/** viande : la question de l'origine est posée ; jours : jours de livraison habituels (1 = lundi … 7 = dimanche). */
+export interface Fournisseur { id: string; nom: string; viande?: boolean; jours?: number[] | null }
+/** Livraison reçue aujourd'hui (liste de l'écran Livraisons). */
+export interface LivraisonJour {
+  id: string; fournisseur: string; at: string; t_camion: number; conforme: boolean; action: string | null;
+  produits_refuses: string | null; pages: number; range_at: string | null;
+}
 
 export interface Anomalie {
   id: string; titre: string; categorie: string; gravite: Gravite;
@@ -69,7 +75,7 @@ export interface Preuves {
   taches: { titre: string; echeance: string; faite_at: string | null; par: string | null }[];
   releves: { id: string; recu_at?: string; correction: Correction | null; rattrapage: string | null; enceinte: string; valeur: number; t_max: number; conforme: boolean; action: string | null; par: string; at: string }[];
   huiles: { id: string; recu_at?: string; correction: Correction | null; rattrapage: string | null; friteuse: string; polaires: number | null; filtrage: boolean; changement: boolean; non_utilisee: boolean; par: string; at: string }[];
-  livraisons: { id: string; recu_at?: string; correction: Correction | null; fournisseur: string; t_camion: number; t_frais: number | null; t_surgele: number | null; conforme: boolean; motifs: string[] | null;
+  livraisons: { id: string; recu_at?: string; correction: Correction | null; photos_bl_suite?: string[]; produits_refuses?: string | null; fournisseur: string; t_camion: number; t_frais: number | null; t_surgele: number | null; conforme: boolean; motifs: string[] | null;
     action: string | null; viande: boolean; origine_ok: boolean | null; photo_bl: string; photo_nc: string | null; range_at: string | null; par: string; at: string }[];
   produits: { recu_at?: string; famille: string; service: string; photo: string; par: string; at: string }[];
   anomalies: { titre: string; gravite: Gravite; statut: Anomalie["statut"]; at: string }[];
@@ -91,6 +97,7 @@ export interface Api {
   etatFriteuses(): Promise<EtatFriteuse[]>;
   anomaliesOuvertes(): Promise<Anomalie[]>;
   fournisseurs(): Promise<Fournisseur[]>;
+  livraisonsDuJour(): Promise<LivraisonJour[]>;
   /** Siège : compte connecté avec le rôle « siege » (tableau de bord au lieu de l'écran tablette). */
   estSiege(): Promise<boolean>;
   tableauSiege(jours: number): Promise<LigneSiege[]>;

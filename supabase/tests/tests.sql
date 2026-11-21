@@ -229,6 +229,20 @@ do $$ declare j jsonb; r uuid := gen_random_uuid(); r2 uuid := gen_random_uuid()
   assert abs(extract(epoch from ((select (x->>'at')::timestamptz from jsonb_array_elements(j->'releves') x where x->>'id' = r2::text) - now()))) < 60, 'heure tablette dans le futur ignorée';
 end $$;
 
+-- réception v2 : verdict cohérent avec les températures, BL sur plusieurs pages, refus partiel
+do $$ declare f uuid; j jsonb; l uuid := gen_random_uuid(); begin
+  select id into f from fournisseurs limit 1;
+  begin
+    insert into livraisons(site_id,fournisseur_id,t_camion,t_frais,photo_bl,conforme,par) values ('00000000-0000-0000-0000-000000000001', f, 9, 3, 'x/bl.webp', true, '00000000-0000-0000-0000-0000000000a1');
+    raise exception 'ÉCHEC : livraison à +9 °C enregistrée conforme';
+  exception when invalid_parameter_value then null; end;
+  insert into livraisons(id,site_id,fournisseur_id,t_camion,t_frais,photo_bl,photos_bl_suite,conforme,motifs,action,produits_refuses,par)
+  values (l, '00000000-0000-0000-0000-000000000001', f, 9, 7, 'x/bl1.webp', array['x/bl2.webp','x/bl3.webp'], false, array['Température'], 'Une partie refusée', 'Salade, herbes', '00000000-0000-0000-0000-0000000000a1');
+  j := preuves_jour('00000000-0000-0000-0000-000000000001', (now() at time zone 'Europe/Paris')::date);
+  assert (select jsonb_array_length(x->'photos_bl_suite') from jsonb_array_elements(j->'livraisons') x where x->>'id' = l::text) = 2, 'pages suivantes du BL dans les preuves';
+  assert (select x->>'produits_refuses' from jsonb_array_elements(j->'livraisons') x where x->>'id' = l::text) = 'Salade, herbes', 'produits refusés dans les preuves';
+end $$;
+
 -- rattrapage d'une saisie oubliée par le siège
 update auth.claims set jwt = '{"sub":"00000000-0000-0000-0000-0000000000c1","app_metadata":{"role":"siege"}}';
 do $$ declare enc uuid; r uuid; j jsonb; begin
