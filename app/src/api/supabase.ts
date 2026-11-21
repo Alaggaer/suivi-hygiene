@@ -122,8 +122,8 @@ export function supabaseApi(url: string, cleAnon: string): Api {
       return data.signedUrl;
     },
     async fournisseurs() {
-      return (ok(await sb.from("fournisseurs").select("id, nom, viande, jours_livraison").eq("actif", true).order("nom")) as (Fournisseur & { jours_livraison: number[] | null })[])
-        .map((f) => ({ id: f.id, nom: f.nom, viande: f.viande, jours: f.jours_livraison }));
+      return (ok(await sb.from("fournisseurs").select("id, nom, viande, jours_livraison, produits").eq("actif", true).order("nom")) as (Fournisseur & { jours_livraison: number[] | null })[])
+        .map((f) => ({ id: f.id, nom: f.nom, viande: f.viande, jours: f.jours_livraison, produits: f.produits }));
     },
     async livraisonsDuJour(): Promise<LivraisonJour[]> {
       const debut = new Date(); debut.setHours(0, 0, 0, 0);

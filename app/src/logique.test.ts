@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  BORNES_HUILE, bornesReleve, trierFournisseurs, verdictLivraison, cheminPhoto, dansBornes, etatAvecEnAttente, etatTache, jourHuile, MIN, niveauAgeHuile, niveauEscalade, niveauHuile, service, tachesALheure,
+  BORNES_HUILE, bornesReleve, temperaturesDemandees, trierFournisseurs, verdictLivraison, cheminPhoto, dansBornes, etatAvecEnAttente, etatTache, jourHuile, MIN, niveauAgeHuile, niveauEscalade, niveauHuile, service, tachesALheure,
   temperatureConforme, temperaturesLivraisonOk, trierTaches,
 } from "./logique";
 
@@ -166,6 +166,12 @@ describe("réception de livraison", () => {
     expect(verdictLivraison({ ...base, camion: 2, problemes: ["DLC trop courte"] })).toEqual({ conforme: false, motifs: ["DLC trop courte"], graveTemperature: false });
     expect(verdictLivraison({ camion: 2, problemes: [], viande: true, origine: false }).motifs).toEqual(["Origine viande absente"]);
     expect(verdictLivraison({ camion: 2, problemes: [], viande: false, origine: false }).conforme).toBe(true);
+  });
+  it("températures demandées selon ce que livre le fournisseur", () => {
+    expect(temperaturesDemandees(null)).toEqual({ frais: true, surgele: true });
+    expect(temperaturesDemandees(["sec"])).toEqual({ frais: false, surgele: false });
+    expect(temperaturesDemandees(["frais", "surgele"])).toEqual({ frais: true, surgele: true });
+    expect(temperaturesDemandees(["surgele"])).toEqual({ frais: false, surgele: true });
   });
   it("fournisseurs attendus aujourd'hui en premier", () => {
     const samedi = new Date("2026-11-21T09:00:00");

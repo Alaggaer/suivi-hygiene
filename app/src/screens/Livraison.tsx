@@ -3,7 +3,7 @@ import type { Fournisseur, LivraisonJour } from "../types";
 import type { Entree } from "../hors-ligne/stockage";
 import { nouvelId, useContexte, useEnregistrer } from "../contexte";
 import {
-  BORNES_LIVRAISON, cheminPhoto, DECISIONS_LIVRAISON, MIN, PROBLEMES_LIVRAISON, SEUILS_LIVRAISON, trierFournisseurs, verdictLivraison,
+  BORNES_LIVRAISON, cheminPhoto, DECISIONS_LIVRAISON, LIBELLE_PRODUITS, MIN, temperaturesDemandees, PROBLEMES_LIVRAISON, SEUILS_LIVRAISON, trierFournisseurs, verdictLivraison,
 } from "../logique";
 import type { Minuteur } from "../minuteurs";
 import { compresserPhoto } from "../photos";
@@ -69,7 +69,7 @@ function ListeDuJour({ onRetour, onChoisir, minuteurs, retirerMinuteur, enAttent
           {tries.map((f) => (
             <button key={f.id} className={`liv-four ${f.attendu ? "attendu" : ""}`} onClick={() => onChoisir(f)}>
               <b>{f.nom}</b>
-              <span>{[f.attendu && "attendu aujourd'hui", f.viande && "viande"].filter(Boolean).join(" · ")}</span>
+              <span>{[f.attendu && "attendu aujourd'hui", ...(f.produits ?? []).map((p) => LIBELLE_PRODUITS[p] ?? p), f.viande && "viande"].filter(Boolean).join(" · ")}</span>
             </button>
           ))}
         </div>
@@ -106,7 +106,11 @@ function Reception({ four, onAnnuler, onFini, lancerMinuteur }: { four: Fourniss
   const { api, site } = useContexte();
   const enregistrer = useEnregistrer();
   const toast = useToast();
-  const [t, setT] = useState<Partial<Record<Champ, number | "aucun">>>({});
+  // Ce que le fournisseur ne livre pas est pré-rempli « Aucun » (toujours modifiable en touchant la case).
+  const demandees = temperaturesDemandees(four.produits);
+  const [t, setT] = useState<Partial<Record<Champ, number | "aucun">>>(() => ({
+    ...(demandees.frais ? {} : { frais: "aucun" as const }), ...(demandees.surgele ? {} : { surgele: "aucun" as const }),
+  }));
   const [pave, setPave] = useState<Champ | null>(null);
   const [pages, setPages] = useState<Blob[]>([]);
   const [rien, setRien] = useState(false);
@@ -166,7 +170,7 @@ function Reception({ four, onAnnuler, onFini, lancerMinuteur }: { four: Fourniss
       <div className="reception-tete">
         <button className="back" onClick={onAnnuler}>← Annuler</button>
         <h1>Réception {four.nom}</h1>
-        {four.viande && <span className="hint">viande</span>}
+        <span className="hint">{[...(four.produits ?? []).map((p) => LIBELLE_PRODUITS[p] ?? p), four.viande && "viande"].filter(Boolean).join(" · ")}</span>
       </div>
 
       <div className="reception-haut">

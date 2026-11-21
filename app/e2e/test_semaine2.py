@@ -37,8 +37,7 @@ def test_livraison_hors_temperature_refus_partiel(page):
     page.click(".act:has-text('Livraison')")
     page.click(".liv-four:has-text('Pomona')")
     saisir(page, page.locator(".liv-temp").nth(0), "9")
-    saisir(page, page.locator(".liv-temp").nth(1), "3")
-    page.click("text=Pas de surgelés")
+    saisir(page, page.locator(".liv-temp").nth(1), "3")             # Pomona ne livre que du frais : surgelés « Aucun »
     page_bl(page)
     page.click("text=Rien à signaler")
     page.wait_for_selector(".liv-verdict.bad:has-text('température')")
@@ -53,12 +52,20 @@ def test_livraison_hors_temperature_refus_partiel(page):
     page.click("text=← Retour")
     page.wait_for_selector(".act .badge:text-is('2')", timeout=3000)
 
+def test_livraison_fournisseur_sec_camion_seulement(page):
+    connecter(page)
+    page.click(".act:has-text('Livraison')")
+    page.click(".liv-four:has-text('Cafés (sec)')")
+    assert page.locator(".liv-temp.aucun").count() == 2, "fournisseur sec : frais et surgelés pré-remplis « Aucun »"
+    saisir(page, page.locator(".liv-temp").nth(0), "12")   # camion non réfrigéré : hors seuil
+    assert page.locator("button.bigbtn").inner_text() == "Photographiez le bon de livraison"
+
 def test_livraison_tout_refusee_sans_rangement(page):
     connecter(page)
     page.click(".act:has-text('Livraison')")
     page.click(".liv-four:has-text('Brake')")
+    assert page.locator(".liv-temp.aucun").count() == 1, "fournisseur de surgelés : « Aucun » frais pré-rempli"
     saisir(page, page.locator(".liv-temp").nth(0), "2")
-    page.click("text=Pas de frais")
     saisir(page, page.locator(".liv-temp").nth(2), "-12")
     page_bl(page)
     page.click("text=DLC trop courte")

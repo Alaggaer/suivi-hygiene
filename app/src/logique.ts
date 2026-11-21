@@ -243,3 +243,10 @@ export function trierFournisseurs<T extends { nom: string; jours?: number[] | nu
   return l.map((f) => ({ ...f, attendu: !!f.jours?.includes(j) }))
     .sort((a, b) => Number(b.attendu) - Number(a.attendu) || a.nom.localeCompare(b.nom, "fr"));
 }
+
+/** Températures à demander selon ce que livre le fournisseur (inconnu : toutes). Le camion est toujours mesuré. */
+export function temperaturesDemandees(produits?: readonly string[] | null): { frais: boolean; surgele: boolean } {
+  if (!produits?.length) return { frais: true, surgele: true };
+  return { frais: produits.includes("frais"), surgele: produits.includes("surgele") };
+}
+export const LIBELLE_PRODUITS: Record<string, string> = { frais: "frais", sec: "sec", surgele: "surgelés" };

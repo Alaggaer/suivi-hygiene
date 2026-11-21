@@ -26,7 +26,8 @@ export interface Tache {
 }
 
 /** viande : la question de l'origine est posée ; jours : jours de livraison habituels (1 = lundi … 7 = dimanche). */
-export interface Fournisseur { id: string; nom: string; viande?: boolean; jours?: number[] | null }
+export type ProduitLivre = "frais" | "sec" | "surgele";
+export interface Fournisseur { id: string; nom: string; viande?: boolean; jours?: number[] | null; produits?: ProduitLivre[] | null }
 /** Livraison reçue aujourd'hui (liste de l'écran Livraisons). */
 export interface LivraisonJour {
   id: string; fournisseur: string; at: string; t_camion: number; conforme: boolean; action: string | null;
