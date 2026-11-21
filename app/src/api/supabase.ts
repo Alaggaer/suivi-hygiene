@@ -1,5 +1,5 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
-import type { Anomalie, AnomalieSiege, Api, Correction, LivraisonJour, StockMort, StockMortSiege, Enceinte, Friteuse, EtatRestaurant, JourHistorique, Preuves, EtatFriteuse, Fournisseur, FournisseurNC, LigneSiege, SeuilsHuile, Site, Tache } from "../types";
+import type { Anomalie, AnomalieSiege, Api, Correction, Employe, EnceinteGestion, FournisseurGestion, FriteuseGestion, LivraisonJour, ModeleTache, SiteGestion, StockMort, StockMortSiege, Tablette, Enceinte, Friteuse, EtatRestaurant, JourHistorique, Preuves, EtatFriteuse, Fournisseur, FournisseurNC, LigneSiege, SeuilsHuile, Site, Tache } from "../types";
 import { ErreurDefinitive, type Operation } from "../operations";
 
 /**
@@ -27,6 +27,15 @@ export function supabaseApi(url: string, cleAnon: string): Api {
     const id = data.session?.user.app_metadata?.site_id as string | undefined;
     if (!id) throw new Error("Cette tablette n'est rattachée à aucun site. Demandez au siège de l'activer.");
     return id;
+  }
+  /** Comptes des tablettes : fonction serveur réservée au siège (elle seule détient la clé de service). */
+  async function adminTablettes(corps: Record<string, unknown>): Promise<unknown> {
+    const { data, error } = await sb.functions.invoke("admin-tablettes", { body: corps });
+    if (error) {
+      const detail = await (error as { context?: Response }).context?.json?.().catch(() => null);
+      throw new Error((detail as { erreur?: string } | null)?.erreur ?? error.message);
+    }
+    return data;
   }
   function ok<T>(r: Reponse<T>): T {
     if (r.error) throw new Error(r.error.message);
@@ -125,6 +134,36 @@ export function supabaseApi(url: string, cleAnon: string): Api {
       return (ok(await sb.from("fournisseurs").select("id, nom, viande, jours_livraison, produits").eq("actif", true).order("nom")) as (Fournisseur & { jours_livraison: number[] | null })[])
         .map((f) => ({ id: f.id, nom: f.nom, viande: f.viande, jours: f.jours_livraison, produits: f.produits }));
     },
+    async sitesGestion() { return ok(await sb.from("sites").select("id, nom, ville, ouverture, service_soir, actif").order("nom")) as SiteGestion[]; },
+    async referentielSite(siteId) {
+      const [e, f, m] = await Promise.all([
+        sb.from("enceintes").select("id, site_id, nom, t_max, ordre, actif").eq("site_id", siteId).order("ordre").order("nom"),
+        sb.from("friteuses").select("id, site_id, nom, litres, actif").eq("site_id", siteId).order("nom"),
+        sb.from("taches_modeles").select("id, site_id, type, titre, heure_limite, jours, actif").eq("site_id", siteId).order("heure_limite"),
+      ]);
+      return {
+        enceintes: (ok(e) as EnceinteGestion[]).map((x) => ({ ...x, t_max: Number(x.t_max) })),
+        friteuses: (ok(f) as FriteuseGestion[]).map((x) => ({ ...x, litres: Number(x.litres) })),
+        modeles: ok(m) as ModeleTache[],
+      };
+    },
+    async fournisseursGestion() { return ok(await sb.from("fournisseurs").select("id, nom, viande, produits, jours_livraison, actif").order("nom")) as FournisseurGestion[]; },
+    async siegeEnregistrer(table, ligne) {
+      const { id, ...reste } = ligne as { id?: string };
+      verifier(id ? await sb.from(table).update(reste).eq("id", id) : await sb.from(table).insert(reste));
+    },
+    async siegeCreerRestaurant(nom, ville, ouverture, serviceSoir) {
+      return ok(await sb.rpc("siege_creer_restaurant", { p_nom: nom, p_ville: ville, p_ouverture: ouverture, p_service_soir: serviceSoir })) as string;
+    },
+    async employesSite(siteId) { return ok(await sb.rpc("employes_site", { p_site: siteId })) as Employe[]; },
+    async siegeAjouterEmploye(siteId, nom, role) { return ok(await sb.rpc("siege_ajouter_employe", { p_site: siteId, p_nom: nom, p_role: role })) as string; },
+    async siegeNouveauPin(profilId) { return ok(await sb.rpc("siege_nouveau_pin", { p_profil: profilId })) as string; },
+    async siegeModifierEmploye(profilId, nom, role, actif) {
+      verifier(await sb.rpc("siege_modifier_employe", { p_profil: profilId, p_nom: nom, p_role: role, p_actif: actif }));
+    },
+    async tablettes(siteId) { return await adminTablettes({ action: "lister", site_id: siteId }) as Tablette[]; },
+    async creerTablette(siteId, email, motDePasse) { await adminTablettes({ action: "creer", site_id: siteId, email, password: motDePasse }); },
+    async motDePasseTablette(userId, motDePasse) { await adminTablettes({ action: "mot_de_passe", user_id: userId, password: motDePasse }); },
     async stocksMortsDuSite() { return ok(await sb.rpc("stocks_morts_du_site")) as StockMort[]; },
     async stocksMortsSiege() { return ok(await sb.rpc("stocks_morts_siege")) as StockMortSiege[]; },
     async siegeRetirerProduit(nom, fournisseurId, consigne) {

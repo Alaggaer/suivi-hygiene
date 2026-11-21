@@ -27,6 +27,16 @@ export interface Tache {
 
 /** viande : la question de l'origine est posée ; jours : jours de livraison habituels (1 = lundi … 7 = dimanche). */
 export type ProduitLivre = "frais" | "sec" | "surgele";
+/* ---------- Gestion par le siège ---------- */
+export type RoleEmploye = "equipe" | "chef" | "responsable";
+export interface Employe { id: string; nom: string; role: RoleEmploye; actif: boolean }
+export interface SiteGestion { id: string; nom: string; ville: string; ouverture: string; service_soir: string; actif: boolean }
+export interface EnceinteGestion { id?: string; site_id: string; nom: string; t_max: number; ordre: number; actif: boolean }
+export interface FriteuseGestion { id?: string; site_id: string; nom: string; litres: number; actif: boolean }
+export interface ModeleTache { id?: string; site_id: string; type: string; titre: string; heure_limite: string; jours: number[]; actif: boolean }
+export interface FournisseurGestion { id?: string; nom: string; viande: boolean; produits: ProduitLivre[] | null; jours_livraison: number[] | null; actif: boolean }
+export interface Tablette { id: string; email: string; site_id: string; cree_at: string; derniere_connexion: string | null }
+export type TableGestion = "sites" | "enceintes" | "friteuses" | "taches_modeles" | "fournisseurs";
 /** Stocks morts : produit sorti de la carte (déclaré par le siège), et où en est ce restaurant. */
 export type EtatStock = "a_verifier" | "a_ecouler" | "solde";
 export type DecisionStock = "jete" | "transfere" | "a_ecouler";
@@ -115,6 +125,21 @@ export interface Api {
   stocksMortsSiege(): Promise<StockMortSiege[]>;
   siegeRetirerProduit(nom: string, fournisseurId: string | null, consigne: string): Promise<void>;
   siegeCloreProduit(id: string): Promise<void>;
+  /* Gestion par le siège */
+  sitesGestion(): Promise<SiteGestion[]>;
+  referentielSite(siteId: string): Promise<{ enceintes: EnceinteGestion[]; friteuses: FriteuseGestion[]; modeles: ModeleTache[] }>;
+  fournisseursGestion(): Promise<FournisseurGestion[]>;
+  /** Crée (sans id) ou modifie une ligne d'une table de paramétrage. */
+  siegeEnregistrer(table: TableGestion, ligne: Record<string, unknown>): Promise<void>;
+  siegeCreerRestaurant(nom: string, ville: string, ouverture: string, serviceSoir: string): Promise<string>;
+  employesSite(siteId: string): Promise<Employe[]>;
+  /** Renvoie le PIN, à communiquer à l'employé (il n'est plus jamais lisible ensuite). */
+  siegeAjouterEmploye(siteId: string, nom: string, role: RoleEmploye): Promise<string>;
+  siegeNouveauPin(profilId: string): Promise<string>;
+  siegeModifierEmploye(profilId: string, nom: string, role: RoleEmploye, actif: boolean): Promise<void>;
+  tablettes(siteId: string): Promise<Tablette[]>;
+  creerTablette(siteId: string, email: string, motDePasse: string): Promise<void>;
+  motDePasseTablette(userId: string, motDePasse: string): Promise<void>;
   /** Siège : compte connecté avec le rôle « siege » (tableau de bord au lieu de l'écran tablette). */
   estSiege(): Promise<boolean>;
   tableauSiege(jours: number): Promise<LigneSiege[]>;

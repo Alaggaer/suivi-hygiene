@@ -286,6 +286,28 @@ do $$ declare p uuid; j jsonb; begin
 end $$;
 update auth.claims set jwt = '{"app_metadata":{"role":"siege"}}';
 
+-- gestion siège : restaurants, employés, PIN
+update auth.claims set jwt = '{"sub":"00000000-0000-0000-0000-0000000000c1","app_metadata":{"role":"siege"}}';
+do $$ declare s uuid; pin text; pin2 text; e uuid; begin
+  s := siege_creer_restaurant('Seattle', 'Lyon');
+  assert (select nom from sites where id = s) = 'SEATTLE', 'nom en majuscules';
+  assert (select count(*) from taches_modeles where site_id = s) = 5, 'tâches habituelles créées';
+  begin perform siege_creer_restaurant('seattle', 'Lyon'); raise exception 'ÉCHEC : doublon de restaurant accepté';
+  exception when invalid_parameter_value then null; end;
+  pin := siege_ajouter_employe(s, 'Nora', 'chef');
+  assert pin ~ '^\d{4}$', 'PIN à 4 chiffres';
+  select id into e from employes_site(s) where nom = 'Nora';
+  assert (select pin_hash = crypt(pin, pin_hash) from profils where id = e), 'PIN enregistré chiffré';
+  pin2 := siege_nouveau_pin(e);
+  assert (select pin_hash = crypt(pin2, pin_hash) and (pin = pin2 or pin_hash <> crypt(pin, pin_hash)) from profils where id = e), 'nouveau PIN : l''ancien ne marche plus';
+  perform siege_modifier_employe(e, 'Nora B.', 'responsable', false);
+  assert (select nom || role::text || actif::text from profils where id = e) = 'Nora B.responsablefalse', 'employé modifié et désactivé';
+  begin perform siege_ajouter_employe(s, 'Pirate', 'siege'); raise exception 'ÉCHEC : compte siège créé comme employé';
+  exception when invalid_parameter_value then null; end;
+  update sites set actif = false where id = s;   -- ne gêne pas les tests suivants (restaurants actifs)
+end $$;
+update auth.claims set jwt = '{"app_metadata":{"role":"siege"}}';
+
 -- règles d'accès : une tablette ne voit que son site
 create role tablette in role authenticated; grant usage on schema public, auth to tablette; grant select, insert, update on all tables in schema public to tablette;
 grant select on auth.claims to tablette; grant execute on all functions in schema auth to tablette;
@@ -302,6 +324,10 @@ do $$ declare p uuid; r record; begin
   begin
     insert into inventaires_stock (id, produit_id, site_id, reste, par) values (gen_random_uuid(), p, '00000000-0000-0000-0000-000000000001', false, '00000000-0000-0000-0000-0000000000a2');
     raise exception 'ÉCHEC : inventaire pour un autre site accepté';
+  exception when insufficient_privilege then null; end;
+  begin
+    perform siege_ajouter_employe('00000000-0000-0000-0000-000000000002', 'Intrus', 'chef');
+    raise exception 'ÉCHEC : une tablette crée un employé';
   exception when insufficient_privilege then null; end;
   begin
     perform siege_retirer_produit('Produit pirate');

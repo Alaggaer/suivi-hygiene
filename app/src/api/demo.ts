@@ -1,4 +1,4 @@
-import type { Api, Anomalie, AnomalieSiege, Correction, DecisionStock, EtatStock, LivraisonJour, Rattrapage, EtatRestaurant, EtatFriteuse, Preuves, Profil, Tache } from "../types";
+import type { Api, Anomalie, AnomalieSiege, Correction, DecisionStock, Employe, EnceinteGestion, FournisseurGestion, FriteuseGestion, ModeleTache, SiteGestion, Tablette, EtatStock, LivraisonJour, Rattrapage, EtatRestaurant, EtatFriteuse, Preuves, Profil, Tache } from "../types";
 import { ErreurDefinitive, type Operation } from "../operations";
 import { transitionPermise } from "../logique";
 
@@ -46,6 +46,29 @@ const produitsDemo: { id: string; nom: string; fournisseur: string | null; consi
           { site_id: "s1", reste: false, quantite: null, dlc: null, photo: null, decision: null, transfert_vers: null, par: "Léa", at: iso(t0 - 4 * 24 * 60 * MIN) }] },
 ];
 const etatInv = (i?: InvDemo): EtatStock => (!i ? "a_verifier" : !i.reste || i.decision === "jete" || i.decision === "transfere" ? "solde" : "a_ecouler");
+/** Gestion siège en démo : paramétrage en mémoire. */
+const gestion = {
+  sites: SITES_DEMO.map(([nom, ville], i) => ({ id: `s${i}`, nom, ville, ouverture: "09:00:00", service_soir: "18:45:00", actif: true })) as SiteGestion[],
+  ref: new Map<string, { enceintes: EnceinteGestion[]; friteuses: FriteuseGestion[]; modeles: ModeleTache[] }>(),
+  employes: new Map<string, Employe[]>(),
+  tablettes: [] as Tablette[],
+  fournisseurs: null as FournisseurGestion[] | null,
+  n: 0,
+};
+function refDemo(site: string) {
+  if (!gestion.ref.has(site)) {
+    const e = (nom: string, t: number, o: number): EnceinteGestion => ({ id: `${site}-e${o}`, site_id: site, nom, t_max: t, ordre: o, actif: true });
+    gestion.ref.set(site, {
+      enceintes: [e("Chambre froide positive", 3, 1), e("Chambre froide négative", -18, 2), e("Frigo poste chaud", 4, 3), e("Frigo poste froid", 4, 4)],
+      friteuses: [1, 2].map((k) => ({ id: `${site}-f${k}`, site_id: site, nom: `Friteuse ${k}`, litres: 25, actif: true })),
+      modeles: [["releves", "Relevé températures du matin", "11:00:00", [1, 2, 3, 4, 5, 6, 7]], ["huile", "Mesure de l'huile", "11:30:00", [1, 2, 3, 4, 5, 6, 7]],
+        ["releves", "Relevé températures du soir", "18:00:00", [1, 2, 3, 4, 5, 6, 7]], ["dlc", "Tour des DLC", "10:30:00", [1]], ["nettoyage", "Nettoyage hottes et filtres", "23:00:00", [5]]]
+        .map(([type, titre, h, j], k) => ({ id: `${site}-m${k}`, site_id: site, type: type as string, titre: titre as string, heure_limite: h as string, jours: j as number[], actif: true })),
+    });
+  }
+  return gestion.ref.get(site)!;
+}
+const pinDemo = () => String(1000 + Math.floor(Math.random() * 9000));
 /** Livraisons reçues pendant la démo. */
 const livraisonsDemo: LivraisonJour[] = [];
 /** Saisies oubliées ajoutées par le siège pendant la démo. */
@@ -114,6 +137,46 @@ export const demoApi: Api = {
     produitsDemo.unshift({ id: `pr${produitsDemo.length + 1}`, nom: nom.trim(), fournisseur: fournisseurId ? "Fournisseur" : null,
       consigne: consigne.trim() || null, sortie_le: new Date().toISOString().slice(0, 10), actif: true, inv: [] });
   },
+  sitesGestion: () => attendre(gestion.sites.map((x) => ({ ...x }))),
+  referentielSite: (site) => { const r = refDemo(site); return attendre({ enceintes: r.enceintes.map((x) => ({ ...x })), friteuses: r.friteuses.map((x) => ({ ...x })), modeles: r.modeles.map((x) => ({ ...x })) }); },
+  fournisseursGestion: async () => {
+    if (!gestion.fournisseurs) gestion.fournisseurs = ["AMERICAN DESSERT", "BEAUVALLET", "CAFES RICHARD", "SYSCO"].map((nom, i) => ({
+      id: `fg${i}`, nom, viande: nom === "BEAUVALLET", produits: nom === "CAFES RICHARD" ? ["sec"] : nom === "AMERICAN DESSERT" ? ["surgele"] : ["frais"], jours_livraison: null, actif: true }));
+    return attendre(gestion.fournisseurs.map((x) => ({ ...x })));
+  },
+  siegeEnregistrer: async (table, ligne) => {
+    const l = ligne as Record<string, unknown> & { id?: string; site_id?: string };
+    const liste: Record<string, unknown>[] = table === "sites" ? gestion.sites as never : table === "fournisseurs" ? (gestion.fournisseurs ?? []) as never
+      : refDemo(l.site_id ?? "")[{ enceintes: "enceintes", friteuses: "friteuses", taches_modeles: "modeles" }[table] as "enceintes"] as never;
+    if (l.id) Object.assign(liste.find((x) => x.id === l.id) ?? {}, l);
+    else liste.push({ ...l, id: `n${++gestion.n}` });
+  },
+  siegeCreerRestaurant: async (nom, ville, ouverture, serviceSoir) => {
+    if (gestion.sites.some((x) => x.nom.toUpperCase() === nom.trim().toUpperCase())) throw new Error("Un restaurant porte déjà ce nom");
+    const id = `n${++gestion.n}`;
+    gestion.sites.push({ id, nom: nom.trim().toUpperCase(), ville: ville.trim().toUpperCase(), ouverture, service_soir: serviceSoir, actif: true });
+    return id;
+  },
+  employesSite: (site) => {
+    if (!gestion.employes.has(site)) gestion.employes.set(site, [{ id: `${site}-p1`, nom: "Karim", role: "chef", actif: true }, { id: `${site}-p2`, nom: "Julie", role: "equipe", actif: true }]);
+    return attendre(gestion.employes.get(site)!.map((x) => ({ ...x })));
+  },
+  siegeAjouterEmploye: async (site, nom, role) => {
+    if (nom.trim().length < 2) throw new Error("Nom obligatoire");
+    (gestion.employes.get(site) ?? gestion.employes.set(site, []).get(site)!).push({ id: `n${++gestion.n}`, nom: nom.trim(), role, actif: true });
+    return pinDemo();
+  },
+  siegeNouveauPin: async () => pinDemo(),
+  siegeModifierEmploye: async (id, nom, role, actif) => {
+    for (const l of gestion.employes.values()) { const e = l.find((x) => x.id === id); if (e) Object.assign(e, { nom, role, actif }); }
+  },
+  tablettes: (site) => attendre(gestion.tablettes.filter((t) => t.site_id === site)),
+  creerTablette: async (site, email, mdp) => {
+    if (mdp.length < 10) throw new Error("Mot de passe trop court : 10 caractères au moins");
+    if (gestion.tablettes.some((t) => t.email === email)) throw new Error("Cet e-mail est déjà utilisé");
+    gestion.tablettes.push({ id: `t${++gestion.n}`, email, site_id: site, cree_at: new Date().toISOString(), derniere_connexion: null });
+  },
+  motDePasseTablette: async (_id, mdp) => { if (mdp.length < 10) throw new Error("Mot de passe trop court : 10 caractères au moins"); },
   siegeCloreProduit: async (id) => { const p = produitsDemo.find((x) => x.id === id); if (p) p.actif = false; },
   anomaliesSiege: () => attendre(anomaliesGroupe.map((a) => ({ ...a }))),
   etatRestaurants: async () => {

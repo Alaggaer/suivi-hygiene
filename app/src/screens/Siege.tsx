@@ -1,3 +1,4 @@
+import { Gestion } from "./Gestion";
 import { useEffect, useMemo, useState } from "react";
 import type { AnomalieSiege, Api, Correction, Fournisseur, StockMortSiege, EtatRestaurant, JourHistorique, Preuves, TableCorrigeable } from "../types";
 import { BORNES_HUILE, bornesReleve, dansBornes, depuis, indicateursRestaurant, trierRestaurants, type Bornes, type Indicateur, type NiveauResto } from "../logique";
@@ -8,7 +9,7 @@ import { BORNES_HUILE, bornesReleve, dansBornes, depuis, indicateursRestaurant, 
  * - fiche restaurant : à traiter, la journée, températures, huile, livraisons, traçabilité, 30 jours ; imprimable en PDF ;
  * - anomalies à vérifier de tout le groupe.
  */
-type Vue = { nom: "accueil" } | { nom: "resto"; id: string } | { nom: "anomalies" } | { nom: "stocks" };
+type Vue = { nom: "accueil" } | { nom: "resto"; id: string } | { nom: "anomalies" } | { nom: "stocks" } | { nom: "gestion" };
 
 const NIV: Record<NiveauResto, { libelle: string; cls: string }> = {
   rouge: { libelle: "À surveiller", cls: "bad" }, orange: { libelle: "Attention", cls: "warn" }, vert: { libelle: "RAS", cls: "ok" },
@@ -55,6 +56,7 @@ export function TableauSiege({ api }: { api: Api }) {
         {vue.nom !== "accueil" && <button className="s3-retour" onClick={() => setVue({ nom: "accueil" })}>← Tous les restaurants</button>}
         <span className="s3-date">{new Date().toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long", timeZone: "Europe/Paris" })}</span>
         <button className="s3-retour" onClick={() => setVue({ nom: "stocks" })}>Stocks morts</button>
+        <button className="s3-retour" onClick={() => setVue({ nom: "gestion" })}>Gestion</button>
         <button className={`s3-averifier ${aVerifier ? "" : "zero"}`} onClick={() => setVue({ nom: "anomalies" })}>
           {aVerifier ? `${aVerifier} à vérifier` : "Anomalies"}
         </button>
@@ -64,6 +66,7 @@ export function TableauSiege({ api }: { api: Api }) {
         <Fiche api={api} etat={tries.find((e) => e.site_id === vue.id)!} anomalies={anomalies.filter((a) => a.site_id === vue.id)}
           onChange={charger} maintenant={maintenant} />
       )}
+      {vue.nom === "gestion" && <Gestion api={api} />}
       {vue.nom === "stocks" && <StocksMortsSiege api={api} onOuvrir={(id) => setVue({ nom: "resto", id })} />}
       {vue.nom === "anomalies" && <AnomaliesGroupe api={api} liste={anomalies} onChange={charger} onOuvrir={(id) => setVue({ nom: "resto", id })} />}
     </div>

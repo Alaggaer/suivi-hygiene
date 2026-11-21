@@ -358,3 +358,37 @@ tr.corrigee td{background:#fbf7ec}
 .sm-barre{display:flex;height:10px;border-radius:5px;background:#f3c7c2;overflow:hidden}
 .sm-barre span.ok{background:var(--ok)} .sm-barre span.warn{background:#d99a2b}
 .act b{padding-right:28px}
+
+/* ---------- Gestion siège ---------- */
+.g-cadre { display: grid; grid-template-columns: 230px 1fr; gap: 16px; align-items: start; }
+.g-liste { display: flex; flex-direction: column; gap: 6px; position: sticky; top: 8px; }
+.g-item { text-align: left; padding: 10px 12px; border-radius: 10px; border: 1px solid #e3e6ea; background: #fff; display: flex; flex-direction: column; gap: 2px; cursor: pointer; font: inherit; }
+.g-item span { font-size: 12px; color: #6b7280; }
+.g-item.sel { border-color: #1f6feb; background: #eef4ff; }
+.g-item.inactif { opacity: .55; }
+.g-item.ajout { color: #1f6feb; font-weight: 600; border-style: dashed; }
+.g-contenu { min-width: 0; }
+.g-onglets { flex-wrap: wrap; margin: 8px 0 12px; }
+.g-section { display: flex; flex-direction: column; gap: 10px; }
+.g-table td { vertical-align: middle; }
+.g-table tr.inactif td { opacity: .55; }
+.g-table .champ, .g-section .champ, .g-form .champ { margin-top: 0; font-size: 15px; padding: 8px 10px; }
+.g-table .champ { width: 100%; min-width: 0; }
+.g-court { max-width: 110px; }
+.g-actions { white-space: nowrap; display: flex; gap: 12px; }
+.g-ajout { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.g-ajout .champ { flex: 1 1 180px; }
+.g-case { display: inline-flex; gap: 6px; align-items: center; white-space: nowrap; }
+.g-jours { display: flex; gap: 4px; flex-wrap: wrap; }
+.g-jour { padding: 4px 8px; border-radius: 6px; border: 1px solid #d0d5dc; background: #fff; font-size: 12px; cursor: pointer; }
+.g-jour.sel { background: #1f6feb; color: #fff; border-color: #1f6feb; }
+.g-pin { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 16px; border: 2px solid #1f6feb; border-radius: 12px; background: #eef4ff; }
+.g-pin-code { font-size: 40px; letter-spacing: 10px; font-variant-numeric: tabular-nums; }
+.g-tablette { display: flex; justify-content: space-between; gap: 12px; align-items: center; padding: 10px 12px; border: 1px solid #e3e6ea; border-radius: 10px; flex-wrap: wrap; }
+.g-form { display: flex; flex-direction: column; gap: 10px; max-width: 520px; }
+.lien { background: none; border: none; color: #1f6feb; cursor: pointer; padding: 0; font: inherit; text-decoration: underline; }
+@media (max-width: 760px) {
+  .g-cadre { grid-template-columns: 1fr; }
+  .g-liste { position: static; flex-direction: row; overflow-x: auto; }
+  .g-item { flex: 0 0 auto; }
+}
