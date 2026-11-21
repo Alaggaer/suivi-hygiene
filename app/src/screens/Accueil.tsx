@@ -52,26 +52,26 @@ export function Accueil({ taches, anomalies, stocksAFaire = 0, alertes = [], onT
         <p className="kpi">Aujourd'hui : <b>{aLheure} tâche{aLheure > 1 ? "s" : ""} faite{aLheure > 1 ? "s" : ""} à l'heure</b> sur {taches.length} · indicateur suivi par le siège</p>
       </section>
       <section className="actions">
-        <button className="act main" onClick={() => onAller("produit")}><b>Traçabilité produits</b><span>Photo de l'étiquette, puis la famille</span></button>
-        <button className="act" onClick={() => onAller("livraison")}><b>Livraison</b><span>Températures, BL, conformité</span></button>
-        <button className="act" onClick={() => onAller("minuteur")}><b>Minuteur</b><span>Refroidissement, remise en T°</span></button>
-        <button className="act" onClick={() => onAller("releves")}><b>Températures</b><span>Relevé hors planning</span></button>
-        <button className="act" onClick={() => onAller("huile")}><b>Huile</b><span>Mesure, filtrage, changement</span></button>
-        <button className="act alert" onClick={() => onAller("signaler")}><b>Signaler</b><span>Un problème, une photo</span></button>
-        {alertes.length > 0 && (
-          <button className="act" onClick={() => onAller("alertes")}>
-            <b>Alertes produit</b><span>Retraits, prolongations DDM</span>
-            {alertes.some((a) => !a.reponses.length) && <span className="badge">{alertes.filter((a) => !a.reponses.length).length}</span>}
+        <button className="act main" onClick={() => onAller("livraison")}><b>Livraison</b><span>Températures, BL, conformité</span></button>
+        <button className="act main" onClick={() => onAller("huile")}><b>Huile</b><span>Mesure, filtrage, changement</span></button>
+        <button className="act main large" onClick={() => onAller("produit")}><b>Traçabilité produits</b><span>Photo de l'étiquette, puis la famille</span></button>
+        <button className="act alert large" onClick={() => onAller("signaler")}><b>Signaler</b><span>Un problème, une photo</span></button>
+        <div className="autres" aria-label="Autres">
+          {alertes.length > 0 && (
+            <button className="act petit" onClick={() => onAller("alertes")}>
+              <b>Alertes produit</b>
+              {alertes.some((a) => !a.reponses.length) && <span className="badge">{alertes.filter((a) => !a.reponses.length).length}</span>}
+            </button>
+          )}
+          <button className="act petit" onClick={() => onAller("minuteur")}><b>Minuteur</b></button>
+          <button className="act petit" onClick={() => onAller("stocks")}>
+            <b>Stocks morts</b>{stocksAFaire > 0 && <span className="badge">{stocksAFaire}</span>}
           </button>
-        )}
-        <button className="act" onClick={() => onAller("stocks")}>
-          <b>Stocks morts</b><span>Produits sortis de la carte</span>
-          {stocksAFaire > 0 && <span className="badge">{stocksAFaire}</span>}
-        </button>
-        <button className="act" onClick={() => onAller("anomalies")}>
-          <b>Anomalies du site</b><span>Suivi jusqu'à la clôture</span>
-          {anomalies.length > 0 && <span className="badge">{anomalies.length}</span>}
-        </button>
+          <button className="act petit" onClick={() => onAller("anomalies")}>
+            <b>Anomalies du site</b>{anomalies.length > 0 && <span className="badge">{anomalies.length}</span>}
+          </button>
+          <button className="act petit discret" onClick={() => onAller("releves")}><b>Température hors planning</b></button>
+        </div>
       </section>
     </div>
   );
