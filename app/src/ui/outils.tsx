@@ -48,8 +48,10 @@ export function ToastProvider({ children }: { children: ReactNode }) {
 }
 
 /* ---------- pavé numérique ---------- */
-export function PaveNumerique({ titre, unite, signe, onValider, onFermer }: {
+export function PaveNumerique({ titre, unite, signe, onValider, onFermer, bornes }: {
   titre: string; unite: string; signe: boolean; onValider: (v: number) => void; onFermer: () => void;
+  /** Valeurs possibles : en dehors, la saisie est refusée avec ce message (faute de frappe, signe oublié…). */
+  bornes?: { min: number; max: number; message: string };
 }) {
   const [v, setV] = useState("");
   const touche = (k: string) => {
@@ -58,12 +60,15 @@ export function PaveNumerique({ titre, unite, signe, onValider, onFermer }: {
     else if (k === ".") setV((x) => (x.includes(".") ? x : (x === "" || x === "-" ? x + "0" : x) + "."));
     else setV((x) => (x.replace(/[-.]/g, "").length < 4 ? x + k : x));
   };
-  const valide = v !== "" && v !== "-" && !Number.isNaN(parseFloat(v));
+  const nombre = v !== "" && v !== "-" && !Number.isNaN(parseFloat(v));
+  const horsBornes = nombre && !!bornes && (parseFloat(v) < bornes.min || parseFloat(v) > bornes.max);
+  const valide = nombre && !horsBornes;
   return (
     <div id="sheet" className="open" role="dialog" aria-modal="true" onClick={(e) => e.target === e.currentTarget && onFermer()}>
       <div className="pad">
         <h3>{titre}</h3>
-        <div className="disp num">{v === "" ? <span style={{ color: "#a9b6c1" }}>—</span> : v.replace(".", ",")} <small style={{ fontSize: 26 }}>{unite}</small></div>
+        <div className={`disp num ${horsBornes ? "t-bad" : ""}`}>{v === "" ? <span style={{ color: "#a9b6c1" }}>—</span> : v.replace(".", ",")} <small style={{ fontSize: 26 }}>{unite}</small></div>
+        {horsBornes && <p className="pave-erreur" role="alert">{bornes!.message} Vérifiez la saisie.</p>}
         <div className="keys">
           {["1", "2", "3", "4", "5", "6", "7", "8", "9"].map((k) => <button key={k} onClick={() => touche(k)}>{k}</button>)}
           {signe ? <button onClick={() => touche("-")} aria-label="Changer le signe">±</button> : <button onClick={() => touche(".")}>,</button>}

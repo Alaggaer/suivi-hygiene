@@ -34,10 +34,13 @@ def test_huile_rouge_exige_une_decision(page):
     assert page.locator(".pill.bad:has-text('Interdite')").count() == 1
     assert page.locator("text=huile utilisée depuis 15 jours").count() == 1, "F3 : changement imposé par l'âge malgré 10 %"
     bouton = page.locator("button.bigbtn")
-    assert bouton.is_disabled() and "Décision" in bouton.inner_text()
-    page.click("text=Huile changée (25 L) >> nth=1")
+    assert bouton.is_disabled() and "filtrée ou changée" in bouton.inner_text()
+    page.click("text=Huile changée (25 L) >> nth=1")         # F2 (la 1re est F1)
+    assert page.locator("button:text-is('Huile filtrée')").count() == 1, "« filtrée » impossible quand le changement est obligatoire"
     page.click("text=Je change avant le service >> nth=1")   # F3 (la 1re est F2)
     page.click("text=Non utilisée aujourd'hui ?")
+    assert bouton.is_disabled(), "F1 mesurée sans réponse filtrée / changée"
+    page.click("button:text-is('Huile filtrée')")                          # F1
     assert bouton.inner_text() == "Valider la mesure"
     bouton.click()
     page.wait_for_selector(".home")
@@ -48,6 +51,8 @@ def test_huile_friteuses_en_plusieurs_fois(page):
     page.click("text=Mesure de l'huile")
     saisir(page, page.locator("button.val").nth(0), "10")
     bouton = page.locator("button.bigbtn")
+    assert bouton.is_disabled()
+    page.click("button:text-is('Huile filtrée')")
     assert "3 friteuses restera à faire" in bouton.inner_text()
     bouton.click()
     page.wait_for_selector(".home")
@@ -60,6 +65,7 @@ def test_huile_friteuses_en_plusieurs_fois(page):
     saisir(page, page.locator("button.val").nth(0), "11")            # F3 (15e jour)
     page.click("text=Huile changée (25 L)")
     saisir(page, page.locator("button.val").nth(1), "9")             # F4
+    page.click("button:text-is('Huile filtrée')")
     bouton.click()
     page.wait_for_selector(".home")
     page.wait_for_selector(".task.faite:has-text(\"Mesure de l'huile\")", timeout=3000)
@@ -82,3 +88,19 @@ def test_enceinte_hors_service(page):
     assert "1 anomalie" in page.locator("#toast").inner_text()
     page.click(".act:has-text('Anomalies du site')")
     page.wait_for_selector(".anom:has-text('Chambre froide négative hors service')")
+
+def test_valeurs_impossibles_refusees(page):
+    connecter(page)
+    page.click("text=Relevé températures du matin")
+    page.wait_for_selector("button.val")
+    rangee = page.locator(".row:has-text('Maximum +')").first
+    rangee.locator("button.val").click()
+    for k in "4":
+        page.click(f'.pad .keys button:text-is("{k}")')
+    page.click('.pad button[aria-label="Changer le signe"]')
+    page.wait_for_selector(".pave-erreur")
+    assert "enceinte positive" in page.locator(".pave-erreur").inner_text()
+    assert page.locator(".pad .k-ok").is_disabled()
+    page.click('.pad button[aria-label="Changer le signe"]')          # +4 : accepté
+    assert page.locator(".pave-erreur").count() == 0
+    assert not page.locator(".pad .k-ok").is_disabled()

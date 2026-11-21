@@ -203,3 +203,19 @@ export function trierRestaurants<T extends EtatR>(liste: T[], maintenant = new D
   return liste.map((e) => ({ ...e, statut: statutRestaurant(e, maintenant) }))
     .sort((a, b) => ORDRE_RESTO[a.statut.niveau] - ORDRE_RESTO[b.statut.niveau] || b.statut.raisons.length - a.statut.raisons.length || a.nom.localeCompare(b.nom, "fr"));
 }
+
+/* ---------- Valeurs vraisemblables (refus des fautes de frappe) ---------- */
+export interface Bornes { min: number; max: number; message: string }
+/** Enceinte positive (max ≥ 0 °C) : de −3 à +20 °C ; négative : de −40 à +15 °C. Au-delà, c'est une erreur de saisie. */
+export function bornesReleve(t_max: number): Bornes {
+  return t_max >= 0
+    ? { min: -3, max: 20, message: "Impossible pour une enceinte positive : entre −3 et +20 °C." }
+    : { min: -40, max: 15, message: "Impossible pour une enceinte négative : entre −40 et +15 °C." };
+}
+export const BORNES_HUILE: Bornes = { min: 0, max: 40, message: "Un testeur affiche entre 0 et 40 % de composés polaires." };
+export const BORNES_LIVRAISON: Record<"camion" | "frais" | "surgele", Bornes> = {
+  camion: { min: -30, max: 25, message: "Température de camion impossible : entre −30 et +25 °C." },
+  frais: { min: -5, max: 25, message: "Produit frais : entre −5 et +25 °C." },
+  surgele: { min: -40, max: 5, message: "Produit surgelé : entre −40 et +5 °C." },
+};
+export const dansBornes = (v: number, b: Bornes) => v >= b.min && v <= b.max;

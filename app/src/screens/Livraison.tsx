@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import type { Fournisseur } from "../types";
 import { nouvelId, useContexte, useEnregistrer } from "../contexte";
-import { cheminPhoto, MIN, SEUILS_LIVRAISON, temperaturesLivraisonOk } from "../logique";
+import { cheminPhoto, MIN, SEUILS_LIVRAISON, temperaturesLivraisonOk, BORNES_LIVRAISON } from "../logique";
 import type { Minuteur } from "../minuteurs";
 import { ChampPhoto } from "../ui/Photo";
 import { PaveNumerique, temp, useToast } from "../ui/outils";
@@ -96,7 +96,7 @@ export function Livraison({ onFini, lancerMinuteur }: { onFini: () => void; lanc
         })}
       </div>
       <button className="bigbtn" disabled={t.camion === undefined || t.frais === undefined} onClick={() => setEtape(3)}>Suivant</button>
-      {pave && <PaveNumerique titre={LIBELLES[pave]} unite="°C" signe onFermer={() => setPave(null)} onValider={(v) => { setT({ ...t, [pave]: v }); setPave(null); }} />}
+      {pave && <PaveNumerique titre={LIBELLES[pave]} unite="°C" signe bornes={BORNES_LIVRAISON[pave]} onFermer={() => setPave(null)} onValider={(v) => { setT({ ...t, [pave]: v }); setPave(null); }} />}
     </div>
   );
 

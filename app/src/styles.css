@@ -275,3 +275,5 @@ textarea{width:100%;min-height:90px;padding:12px;border-radius:12px;border:2px s
   .s3-bloc,.s3-atraiter,.carte{break-inside:avoid;border:1px solid #999}
   .pill{border:1px solid currentColor}
 }
+
+.pave-erreur{margin:0 0 10px;color:var(--bad);font-weight:700;font-size:16px;text-align:center}

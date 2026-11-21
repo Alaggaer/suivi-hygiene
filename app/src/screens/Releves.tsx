@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import type { Enceinte, Tache } from "../types";
 import { nouvelId, useContexte, useEnregistrer } from "../contexte";
 import { PaveNumerique, temp, useToast } from "../ui/outils";
-import { temperatureConforme } from "../logique";
+import { temperatureConforme, bornesReleve } from "../logique";
 
 const ACTIONS = ["Thermostat réglé", "Porte mal fermée, refermée", "Denrées déplacées", "Denrées jetées", "Technicien appelé"];
 
@@ -79,7 +79,7 @@ export function Releves({ tache, onFini }: { tache?: Tache; onFini: () => void }
       <button className="bigbtn" disabled={!complet || envoi} onClick={valider}>
         {envoi ? "Enregistrement…" : restantes ? `Encore ${restantes} enceinte${restantes > 1 ? "s" : ""} à relever` : "Valider le relevé"}
       </button>
-      {pave && <PaveNumerique titre={pave.nom} unite="°C" signe onFermer={() => setPave(null)} onValider={(v) => { setVals({ ...vals, [pave.id]: v }); setPave(null); }} />}
+      {pave && <PaveNumerique titre={pave.nom} unite="°C" signe bornes={bornesReleve(pave.t_max)} onFermer={() => setPave(null)} onValider={(v) => { setVals({ ...vals, [pave.id]: v }); setPave(null); }} />}
     </div>
   );
 }

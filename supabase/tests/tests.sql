@@ -189,6 +189,18 @@ do $$ declare e record; n int; begin
   assert (select taches_echues from historique_site('00000000-0000-0000-0000-000000000001', 30) order by jour desc limit 1) >= 1, 'aujourd''hui compte ses tâches échues';
 end $$;
 
+-- vraisemblance : valeurs impossibles refusées
+do $$ begin
+  begin
+    insert into releves(site_id,enceinte_id,valeur,par) select site_id, id, -4, '00000000-0000-0000-0000-0000000000a1' from enceintes where t_max >= 0 limit 1;
+    raise exception 'ÉCHEC : −4 °C accepté dans une enceinte positive';
+  exception when invalid_parameter_value then null; end;
+  begin
+    insert into huiles(site_id,friteuse_id,polaires,par) values ('00000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-0000000000b1',250,'00000000-0000-0000-0000-0000000000a1');
+    raise exception 'ÉCHEC : 250 %% d''huile accepté';
+  exception when invalid_parameter_value then null; end;
+end $$;
+
 -- règles d'accès : une tablette ne voit que son site
 create role tablette in role authenticated; grant usage on schema public, auth to tablette; grant select, insert, update on all tables in schema public to tablette;
 grant select on auth.claims to tablette; grant execute on all functions in schema auth to tablette;

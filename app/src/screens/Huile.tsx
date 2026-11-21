@@ -2,15 +2,11 @@ import { useEffect, useState } from "react";
 import type { EtatFriteuse, Friteuse, SeuilsHuile, Tache } from "../types";
 import { nouvelId, useContexte, useEnregistrer } from "../contexte";
 import { PaveNumerique, pct, useToast } from "../ui/outils";
-import { etatAvecEnAttente, JOURS_HUILE_MAX, jourHuile, niveauAgeHuile, niveauHuile } from "../logique";
+import { BORNES_HUILE, etatAvecEnAttente, JOURS_HUILE_MAX, jourHuile, niveauAgeHuile, niveauHuile } from "../logique";
 import type { Entree } from "../hors-ligne/stockage";
 
-type Changement = "fait" | "plus-tard";
-const basculer = (c: Record<string, Changement>, id: string, v: Changement) => {
-  const n = { ...c };
-  if (n[id] === v) delete n[id]; else n[id] = v;
-  return n;
-};
+/** Après chaque mesure, une réponse obligatoire : huile filtrée, huile changée, ou (si elle doit être changée) changement avant le service. */
+type Decision = "filtree" | "changee" | "plus-tard";
 
 /**
  * Mesure de l'huile, friteuse par friteuse :
@@ -27,8 +23,7 @@ export function Huile({ tache, onFini, enAttente = [] }: { tache?: Tache; onFini
   const [etat, setEtat] = useState<Record<string, EtatFriteuse>>({});
   const [vals, setVals] = useState<Record<string, number>>({});
   const [eteinte, setEteinte] = useState<Record<string, boolean>>({});
-  const [filtrage, setFiltrage] = useState<Record<string, boolean>>({});
-  const [chg, setChg] = useState<Record<string, Changement>>({});
+  const [dec, setDec] = useState<Record<string, Decision>>({});
   const [pave, setPave] = useState<Friteuse | null>(null);
   const [envoi, setEnvoi] = useState(false);
   const [erreur, setErreur] = useState<string | null>(null);
@@ -57,7 +52,9 @@ export function Huile({ tache, onFini, enAttente = [] }: { tache?: Tache; onFini
   };
   const saisies = aFaire.filter(saisie);
   const restantes = aFaire.filter((f) => !saisie(f));
-  const decisionsOk = saisies.every((f) => !obligation(f) || chg[f.id]);
+  /** Réponse valable : présente, et pas « filtrée » seule quand le changement est obligatoire. */
+  const decisionOk = (f: Friteuse) => !!eteinte[f.id] || (!!dec[f.id] && !(obligation(f) && dec[f.id] === "filtree"));
+  const decisionsOk = saisies.every(decisionOk);
   const possible = saisies.length > 0 && decisionsOk;
 
   async function valider() {
@@ -65,11 +62,11 @@ export function Huile({ tache, onFini, enAttente = [] }: { tache?: Tache; onFini
     try {
       const lignes = saisies.map((f) => eteinte[f.id]
         ? { id: nouvelId(), friteuse_id: f.id, polaires: null, filtrage: false, changement: false, non_utilisee: true }
-        : { id: nouvelId(), friteuse_id: f.id, polaires: vals[f.id], filtrage: !!filtrage[f.id],
-            changement: chg[f.id] === "fait", litres: chg[f.id] === "fait" ? f.litres : undefined });
+        : { id: nouvelId(), friteuse_id: f.id, polaires: vals[f.id], filtrage: dec[f.id] === "filtree",
+            changement: dec[f.id] === "changee", litres: dec[f.id] === "changee" ? f.litres : undefined });
       // La tâche n'est close que lorsque toutes les friteuses ont été faites aujourd'hui.
       await enregistrer({ type: "huile", tache_id: restantes.length ? undefined : tache?.id, lignes });
-      const anomalies = saisies.filter((f) => chg[f.id] === "plus-tard").map((f) => ({
+      const anomalies = saisies.filter((f) => dec[f.id] === "plus-tard").map((f) => ({
         id: nouvelId(), source: "huile", categorie: "Huile", gravite: "majeure" as const,
         titre: `${f.nom} : ${obligation(f)} · changement à faire avant le service`,
         ref_id: lignes.find((l) => l.friteuse_id === f.id)!.id,
@@ -85,7 +82,7 @@ export function Huile({ tache, onFini, enAttente = [] }: { tache?: Tache; onFini
   const LIB = { ok: "Bonne", warn: "À changer bientôt", bad: "Interdite · à changer", none: "À mesurer" };
   const libelleBouton = envoi ? "Enregistrement…"
     : !saisies.length ? "Saisissez au moins une friteuse"
-    : !decisionsOk ? "Décision à prendre sur une huile"
+    : !decisionsOk ? "Indiquez pour chaque friteuse : filtrée ou changée"
     : restantes.length ? `Valider (${restantes.length} friteuse${restantes.length > 1 ? "s" : ""} restera à faire)`
     : "Valider la mesure";
 
@@ -131,12 +128,13 @@ export function Huile({ tache, onFini, enAttente = [] }: { tache?: Tache; onFini
               {!off && <button className={`val num ${a ? "filled" : ""}`} onClick={() => setPave(f)}>{a ? pct(v) : "Saisir"}</button>}
               {a && (
                 <div className="fix" style={{ borderTopColor: "var(--line)" }}>
-                  {oblig && <p>Changement obligatoire avant le service : {oblig}.</p>}
+                  {oblig ? <p>Changement obligatoire avant le service : {oblig}.</p>
+                    : <p className={decisionOk(f) ? "seuil" : ""}>Réponse obligatoire : huile filtrée ou changée ?</p>}
                   {!oblig && age === "warn" && <p className="info">Dernier{jour === max ? "" : "s"} jour{jour === max ? "" : "s"} pour cette huile : à changer au plus tard après le jour {max}.</p>}
-                  <button className={`opt ${filtrage[f.id] ? "sel" : ""}`} onClick={() => setFiltrage({ ...filtrage, [f.id]: !filtrage[f.id] })}>Filtrage fait</button>
-                  <button className={`opt ${chg[f.id] === "fait" ? "sel" : ""}`} onClick={() => setChg(basculer(chg, f.id, "fait"))}>Huile changée ({f.litres} L)</button>
-                  {oblig && <button className={`opt ${chg[f.id] === "plus-tard" ? "sel" : ""}`} onClick={() => setChg({ ...chg, [f.id]: "plus-tard" })}>Je change avant le service</button>}
-                  {chg[f.id] === "fait" && <p className="seuil">Nouvelle huile : le compteur repart au jour 1.</p>}
+                  {!oblig && <button className={`opt ${dec[f.id] === "filtree" ? "sel" : ""}`} onClick={() => setDec({ ...dec, [f.id]: "filtree" })}>Huile filtrée</button>}
+                  <button className={`opt ${dec[f.id] === "changee" ? "sel" : ""}`} onClick={() => setDec({ ...dec, [f.id]: "changee" })}>Huile changée ({f.litres} L)</button>
+                  {oblig && <button className={`opt ${dec[f.id] === "plus-tard" ? "sel" : ""}`} onClick={() => setDec({ ...dec, [f.id]: "plus-tard" })}>Je change avant le service</button>}
+                  {dec[f.id] === "changee" && <p className="seuil">Nouvelle huile : le compteur repart au jour 1.</p>}
                 </div>
               )}
             </div>
@@ -153,7 +151,7 @@ export function Huile({ tache, onFini, enAttente = [] }: { tache?: Tache; onFini
       )}
       {erreur && <p className="pill bad">{erreur}</p>}
       {aFaire.length > 0 && <button className="bigbtn" disabled={!possible || envoi} onClick={valider}>{libelleBouton}</button>}
-      {pave && <PaveNumerique titre={`${pave.nom} · composés polaires`} unite="%" signe={false} onFermer={() => setPave(null)} onValider={(v) => { setVals({ ...vals, [pave.id]: v }); setPave(null); }} />}
+      {pave && <PaveNumerique titre={`${pave.nom} · composés polaires`} unite="%" signe={false} bornes={BORNES_HUILE} onFermer={() => setPave(null)} onValider={(v) => { setVals({ ...vals, [pave.id]: v }); setPave(null); }} />}
     </div>
   );
 }

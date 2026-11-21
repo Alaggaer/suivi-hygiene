@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  cheminPhoto, etatAvecEnAttente, etatTache, jourHuile, MIN, niveauAgeHuile, niveauEscalade, niveauHuile, service, tachesALheure,
+  BORNES_HUILE, bornesReleve, cheminPhoto, dansBornes, etatAvecEnAttente, etatTache, jourHuile, MIN, niveauAgeHuile, niveauEscalade, niveauHuile, service, tachesALheure,
   temperatureConforme, temperaturesLivraisonOk, trierTaches,
 } from "./logique";
 
@@ -136,5 +136,23 @@ describe("tableau du siège", () => {
   it("une anomalie critique pèse plus qu'un léger retard", () => {
     expect(scoreSite(ok)).toBe(0);
     expect(scoreSite({ ...ok, anomalies_critiques: 1, anomalies_ouvertes: 1 })).toBeGreaterThan(scoreSite({ ...ok, taches_a_lheure: 18 }));
+  });
+});
+
+describe("valeurs vraisemblables", () => {
+  it("enceinte positive : −4 °C refusé, −3 et +20 acceptés", () => {
+    const b = bornesReleve(4);
+    expect(dansBornes(-4, b)).toBe(false);
+    expect(dansBornes(-3, b) && dansBornes(20, b) && dansBornes(3.5, b)).toBe(true);
+    expect(dansBornes(21, b)).toBe(false);
+  });
+  it("enceinte négative : +18 °C refusé (signe oublié), −18 accepté", () => {
+    const b = bornesReleve(-18);
+    expect(dansBornes(18, b)).toBe(false);
+    expect(dansBornes(-18, b) && dansBornes(-12, b) && dansBornes(4, b)).toBe(true);
+  });
+  it("huile entre 0 et 40 %", () => {
+    expect(dansBornes(41, BORNES_HUILE)).toBe(false);
+    expect(dansBornes(24.5, BORNES_HUILE)).toBe(true);
   });
 });
