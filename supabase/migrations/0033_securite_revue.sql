@@ -151,7 +151,8 @@ do $$
 declare f record; v_auth boolean;
 begin
   for f in select p.oid, p.oid::regprocedure as sig from pg_proc p join pg_namespace n on n.oid = p.pronamespace
-           where n.nspname = 'public' and p.prokind = 'f' loop
+           where n.nspname = 'public' and p.prokind = 'f' and pg_get_userbyid(p.proowner) = current_user
+             and not exists (select 1 from pg_depend d where d.objid = p.oid and d.deptype = 'e') loop
     v_auth := has_function_privilege('authenticated', f.oid, 'EXECUTE');
     execute format('revoke execute on function %s from public', f.sig);
     if exists (select 1 from pg_roles where rolname = 'anon') then execute format('revoke execute on function %s from anon', f.sig); end if;
@@ -160,6 +161,7 @@ begin
   end loop;
 end $$;
 alter default privileges revoke execute on functions from public;
+alter default privileges in schema public revoke execute on functions from anon;
 
 -- Les preuves ne se suppriment pas ; leurs modifications sont journalisées.
 do $$
