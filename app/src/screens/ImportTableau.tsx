@@ -12,7 +12,7 @@ const GROUPES: { t: Action["t"][]; titre: string }[] = [
  * Import du tableau de paramétrage : on dépose le fichier, l'app montre ce qu'elle va faire,
  * rien n'est enregistré avant « Appliquer ». Les codes des nouveaux employés s'affichent à la fin, une seule fois.
  */
-export function ImportTableau({ api, onFini }: { api: Api; onFini: () => void }) {
+export function ImportTableau({ api, onFini }: { api: Api; onFini: () => unknown }) {
   const [etape, setEtape] = useState<"fichier" | "lecture" | "apercu" | "envoi" | "fini">("fichier");
   const [modele, setModele] = useState<Modele | null>(null);
   const [plan, setPlan] = useState<Plan | null>(null);
@@ -33,9 +33,16 @@ export function ImportTableau({ api, onFini }: { api: Api; onFini: () => void })
   }
   async function lancer() {
     if (!plan) return;
-    setEtape("envoi"); setFait(0);
-    const r = await appliquer(api, plan.actions, setFait);
-    setRes(r); setEtape("fini"); onFini();
+    setEtape("envoi"); setFait(0); setErreur(null);
+    try {
+      const r = await appliquer(api, plan.actions, setFait);
+      setRes(r); setEtape("fini");
+    } catch (e) {
+      // Interruption imprévue : on redemande le fichier, l'aperçu sera recalculé d'après ce qui existe maintenant.
+      setErreur(`Import interrompu : ${(e as Error).message}. Redéposez le fichier : ce qui a déjà été fait ne sera pas refait.`);
+      setEtape("fichier"); return;
+    }
+    try { await onFini(); } catch { /* la liste se mettra à jour plus tard ; les codes affichés restent */ }
   }
 
   if (etape === "fichier" || etape === "lecture") return (

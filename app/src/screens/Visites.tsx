@@ -96,6 +96,7 @@ export function FormVisite({ photo, demo = false, onAnnuler, onValider }: { phot
   const [commentaire, setCommentaire] = useState("");
   const [ecarts, setEcarts] = useState<{ texte: string; gravite: Gravite }[]>([]);
   const [analyses, setAnalyses] = useState<AnalyseSaisie[]>([]);
+  const [idSaisie] = useState(() => nouvelId());   // même identifiant si on réessaie : pas de doublon
   const [piece, setPiece] = useState<Blob | null>(null);
   const [envoi, setEnvoi] = useState(false);
   const [erreur, setErreur] = useState<string | null>(null);
@@ -137,7 +138,7 @@ export function FormVisite({ photo, demo = false, onAnnuler, onValider }: { phot
         <button className="bigbtn" disabled={!!manque || envoi} onClick={async () => {
           setEnvoi(true); setErreur(null);
           try {
-            await onValider({ id: nouvelId(), type, date_visite: d, organisme: organisme.trim() || undefined, intervenant: intervenant.trim() || undefined, note: n,
+            await onValider({ id: idSaisie, type, date_visite: d, organisme: organisme.trim() || undefined, intervenant: intervenant.trim() || undefined, note: n,
               niveau: niveau ?? undefined, commentaire: commentaire.trim() || undefined, ecarts: ecarts.map((e) => ({ ...e, texte: e.texte.trim() })), analyses: propre(analyses) }, piece);
           } catch (e) { setErreur((e as Error).message); setEnvoi(false); }
         }}>{manque ?? "Enregistrer la visite"}</button>

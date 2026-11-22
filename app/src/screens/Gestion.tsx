@@ -46,7 +46,7 @@ export function Gestion({ api }: { api: Api }) {
         <div className="g-contenu">
           {choix?.type === "nouveau" && <NouveauRestaurant api={api} onCree={async (id) => { await charger(); setChoix({ type: "site", id }); }} />}
           {choix?.type === "fournisseurs" && <Fournisseurs api={api} />}
-          {choix?.type === "import" && <ImportTableau api={api} onFini={charger} />}
+          {choix?.type === "import" && <ImportTableau api={api} onFini={() => api.sitesGestion().then(setSites).catch(() => {})} />}
           {site && <FicheGestion key={site.id} api={api} site={site} onSiteModifie={charger} />}
         </div>
       </div>

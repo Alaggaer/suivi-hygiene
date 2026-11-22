@@ -4,7 +4,7 @@ import { EtatEurofins, FormAnalyses, FormVisite, ListeVisites } from "./Visites"
 import { Attendus, FormDocument, ListeArchives, ListeClasseur } from "./Classeur";
 import { useFiche } from "./Nettoyage";
 import { nouvelId, useContexte, useEnregistrer } from "../contexte";
-import { actionEnRetard, cheminPhoto, clotureSiege, ETAT_CONTROLE, lectureConforme, transitionPermise } from "../logique";
+import { actionEnRetard, cheminPhoto, clotureSiege, ETAT_CONTROLE, lectureConforme, transitionPermise, BORNES_MESURE, lecturePlausible } from "../logique";
 import { ChampPhoto } from "../ui/Photo";
 import { useToast } from "../ui/outils";
 import { useDocument } from "./AlertesProduit";
@@ -337,9 +337,11 @@ function FormVerification({ a, onAnnuler, onFait }: { a: AppareilMesure; onAnnul
   const [photo, setPhoto] = useState<Blob | null>(null);
   const [envoi, setEnvoi] = useState(false);
   const v = Number(valeur.replace(",", "."));
-  const lisible = valeur.trim() !== "" && Number.isFinite(v);
+  const saisie = valeur.trim() !== "" && Number.isFinite(v);
+  const lisible = saisie && m !== "certificat" && lecturePlausible(m, v);
   const conforme = m === "certificat" ? certifOk : lisible ? lectureConforme(m, v) : null;
-  const manque = m !== "certificat" && !lisible ? "Saisissez la valeur lue" : m === "certificat" && certifOk === null ? "Certificat conforme ?" : !photo ? "Prenez la photo" : null;
+  const manque = m !== "certificat" && !saisie ? "Saisissez la valeur lue"
+    : m !== "certificat" && !lisible ? `Valeur impossible : entre ${BORNES_MESURE[m].min} et ${BORNES_MESURE[m].max} °C` : m === "certificat" && certifOk === null ? "Certificat conforme ?" : !photo ? "Prenez la photo" : null;
   return (
     <div className="screen">
       <button className="back" onClick={onAnnuler}>← Annuler</button>

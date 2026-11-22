@@ -25,9 +25,9 @@ export function Activation({ api, onActivee }: { api: Api; onActivee: () => void
 }
 
 /** Choix de la personne puis code PIN. */
-export function Connexion({ api, onConnecte }: { api: Api; onConnecte: (p: Profil) => void }) {
+export function Connexion({ api, onConnecte, reprise }: { api: Api; onConnecte: (p: Profil) => void; reprise?: Profil }) {
   const [profils, setProfils] = useState<Profil[]>([]);
-  const [choix, setChoix] = useState<Profil | null>(null);
+  const [choix, setChoix] = useState<Profil | null>(reprise ?? null);
   const [pin, setPin] = useState("");
   const [erreur, setErreur] = useState<string | null>(null);
 
@@ -53,6 +53,7 @@ export function Connexion({ api, onConnecte }: { api: Api; onConnecte: (p: Profi
   return (
     <div className="login">
       <h1 style={{ fontSize: 40 }}>Qui êtes-vous ?</h1>
+      {reprise && <p className="pill warn">Saisie en cours de {reprise.nom}, gardée : retapez votre code pour la reprendre. Une autre personne repart de l'accueil.</p>}
       <div className="users">
         {profils.map((p) => (
           <button key={p.id} className={choix?.id === p.id ? "sel" : ""} onClick={() => { setChoix(p); setPin(""); setErreur(null); }}>

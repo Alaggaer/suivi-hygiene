@@ -205,3 +205,13 @@ describe("Espace PMS", () => {
     expect(actionEnRetard({ statut: "ouverte", echeance: null }, "2026-11-22")).toBe(false);
   });
 });
+
+describe("vérification de sonde", () => {
+  it("refuse une valeur impossible avant l'envoi (comme le serveur)", async () => {
+    const { lecturePlausible } = await import("./logique");
+    expect(lecturePlausible("glace", 0.2)).toBe(true);
+    expect(lecturePlausible("ebullition", 99.6)).toBe(true);
+    expect(lecturePlausible("ebullition", 996)).toBe(false);
+    expect(lecturePlausible("glace", 25)).toBe(false);
+  });
+});

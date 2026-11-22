@@ -310,7 +310,7 @@ export const demoApi: Api = {
     id: d.id, groupe: d.site === null, type: typesDocsDemo.find((t) => t.cle === d.type_cle)!.libelle, titre: d.titre, fichier: d.fichier, expire_le: d.expire_le,
     personne: d.personne, at: d.at, archive_at: d.archive_at! }))),
   documentsGroupe: () => attendre(SITES_DEMO.map((_, k) => { const c = classeurDemo(`s${k}`);
-    return { site_id: `s${k}`, manquants: c.attendus.filter((a) => !a.present).length, expires: c.documents.filter((d) => d.etat === "retard").length, bientot: c.documents.filter((d) => d.etat === "bientot").length }; })),
+    return { site_id: `s${k}`, manquants: c.attendus.filter((a) => !a.present && !c.documents.some((d) => d.type_cle === a.cle && d.etat === "retard")).length, expires: c.documents.filter((d) => d.etat === "retard").length, bientot: c.documents.filter((d) => d.etat === "bientot").length }; })),
   siegeEnregistrerDocument: async (site, d) => deposerDocDemo(site, d, "demo/s2.webp", "Siège"),
   siegeArchiverDocument: async (id) => { const a = docsDemo.find((x) => x.id === id); if (a) Object.assign(a, { actif: false, archive_at: iso(Date.now()) }); },
   etatVisites: () => attendre(etatVisitesDemo()),

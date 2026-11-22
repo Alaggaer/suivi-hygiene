@@ -126,6 +126,11 @@ export const ETAT_CONTROLE: Record<string, { libelle: string; classe: string }> 
 };
 
 /** Métrologie : conformité d'une lecture (glace fondante 0 °C ± 0,5 ; eau bouillante 100 °C ± 1), comme le serveur. */
+/** Valeurs plausibles pour une vérification de sonde (les mêmes que le serveur, sinon la saisie serait refusée plus tard). */
+export const BORNES_MESURE = { glace: { min: -20, max: 20 }, ebullition: { min: 80, max: 120 } } as const;
+export const lecturePlausible = (methode: "glace" | "ebullition", v: number) =>
+  Number.isFinite(v) && v >= BORNES_MESURE[methode].min && v <= BORNES_MESURE[methode].max;
+
 export function lectureConforme(methode: "glace" | "ebullition", valeur: number): boolean {
   return methode === "glace" ? Math.abs(valeur) <= 0.5 : Math.abs(valeur - 100) <= 1;
 }

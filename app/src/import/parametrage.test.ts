@@ -137,3 +137,28 @@ describe("plan d'import", () => {
     expect(planifier(m, apres).actions).toEqual([]);
   });
 });
+
+describe("plan d'import : noms proches", () => {
+  const base = { sites: [{ id: "s1", nom: "SAINT-MALO", ville: "X", ouverture: "09:00:00", service_soir: "18:45:00", actif: true }],
+    enceintes: { s1: [] }, friteuses: { s1: [] }, fournisseurs: [{ id: "x1", nom: "L'ÉPICERIE", viande: false, produits: null, jours_livraison: null, actif: true }] };
+  const lire = (employes: unknown[][]) => lireClasseur(classeur({
+    Restaurants: [["Restaurant", "Ville", "Responsable de site", "Ouverture", "Début service soir"], ["Saint Malo", "X", null, "09h", "18h45"]],
+    "Employés": [["Restaurant", "Prénom", "Nom", "Rôle"], ...employes],
+    Fournisseurs: [["Fournisseur", "Produits livrés", "Livre de la viande", "Jours de livraison"], ["L’Epicerie", null, null, null]],
+  }));
+  it("tirets, apostrophes et accents ne créent pas de doublon", () => {
+    const m = lire([["SAINT MALO", "Jean Pierre", null, "Équipe"]]);
+    expect(m.problemes.filter((p) => p.bloquant)).toEqual([]);
+    const p = planifier(m, { ...base, employes: { s1: [{ id: "p1", nom: "Jean-Pierre", role: "equipe", actif: true }] } });
+    expect(p.actions).toEqual([]);
+  });
+  it("un prénom seul n'absorbe pas deux personnes", () => {
+    const m = lire([["Saint-Malo", "Marie", "Curie", "Équipe"], ["Saint-Malo", "Marie", "Dupont", "Équipe"]]);
+    const p = planifier(m, { ...base, employes: { s1: [{ id: "p1", nom: "Marie", role: "equipe", actif: true }] } });
+    expect(p.actions.map((a) => a.libelle)).toEqual(["SAINT MALO · nouvel employé Marie Curie (équipe)", "SAINT MALO · nouvel employé Marie Dupont (équipe)"]);
+  });
+  it("un prénom seul retrouve la personne s'il ne peut désigner qu'elle", () => {
+    const m = lire([["Saint-Malo", "Marie", "Curie", "Équipe"]]);
+    expect(planifier(m, { ...base, employes: { s1: [{ id: "p1", nom: "Marie", role: "equipe", actif: true }] } }).actions).toEqual([]);
+  });
+});

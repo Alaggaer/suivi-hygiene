@@ -52,6 +52,7 @@ export default function App({ api, file }: { api: Api; file: FileEnvoi }) {
   const [siege, setSiege] = useState(false);
   const [site, setSite] = useState<Site | null>(null);
   const [profil, setProfil] = useState<Profil | null>(null);
+  const [enVeille, setEnVeille] = useState(false);   // saisie en cours mise de côté après inactivité
   const [ecran, setEcran] = useState<Ecran>({ nom: "accueil" });
   const [tachesServeur, setTaches] = useState<Tache[]>([]);
   const [anomaliesServeur, setAnomalies] = useState<Anomalie[]>([]);
@@ -110,7 +111,15 @@ export default function App({ api, file }: { api: Api; file: FileEnvoi }) {
   useEffect(() => { if (profil && etatFile.attente < attentePrec.current) recharger(); attentePrec.current = etatFile.attente; }, [etatFile.attente, profil, recharger]);
 
   // Tablette partagée : retour à « Qui êtes-vous ? » après 2 minutes sans toucher l'écran.
-  useInactivite(2 * MIN, !!profil, () => { setProfil(null); setEcran({ nom: "accueil" }); });
+  // Si une saisie est en cours, elle est gardée (cachée) jusqu'au retour de la même personne.
+  useInactivite(2 * MIN, !!profil && !enVeille, () => {
+    if (ecran.nom === "accueil") { setProfil(null); return; }
+    setEnVeille(true);
+  });
+  const reprendre = (p: Profil) => {
+    setEnVeille(false);
+    if (p.id !== profil?.id) { setProfil(p); setEcran({ nom: "accueil" }); toast(`Bonjour ${p.nom}`); }
+  };
 
   const { taches, anomalies } = useMemo(() => appliquerEnAttente(tachesServeur, anomaliesServeur, entrees), [tachesServeur, anomaliesServeur, entrees]);
 
@@ -150,7 +159,7 @@ export default function App({ api, file }: { api: Api; file: FileEnvoi }) {
     <div id="app">
       <div className="top">
         <span className="site">{siege ? "Siège · Suivi Hygiène" : site ? `${site.nom} · ${site.ville}` : "Suivi Hygiène"}</span>
-        {profil && <span className="who">{profil.nom} <button className="chipbtn" onClick={() => { setProfil(null); setEcran({ nom: "accueil" }); }}>Changer d'utilisateur</button></span>}
+        {profil && !enVeille && <span className="who">{profil.nom} <button className="chipbtn" onClick={() => { setProfil(null); setEnVeille(false); setEcran({ nom: "accueil" }); }}>Changer d'utilisateur</button></span>}
         {!siege && <Synchro enLigne={enLigne} attente={etatFile.attente} bloquees={etatFile.bloquees} onVoir={() => setVoirRefusees(true)} />}
         <span className="clock num">{hm(maintenant)}</span>
       </div>
@@ -163,7 +172,11 @@ export default function App({ api, file }: { api: Api; file: FileEnvoi }) {
       )}
       {erreur && profil && <div className="demo" style={{ background: "var(--bad-bg)", color: "var(--bad)" }}>{erreur}</div>}
       {profil && <Bandeau minuteurs={minuteurs.liste} retirer={minuteurs.retirer} />}
-      <main id="main">{corps}</main>
+      <main id="main">
+        {/* Même position dans l'arbre, veille ou non : la saisie cachée garde son état. */}
+        <div style={{ display: enVeille ? "none" : "contents" }}>{corps}</div>
+        {enVeille && profil && <Connexion api={api} reprise={profil} onConnecte={reprendre} />}
+      </main>
       {voirRefusees && <SaisiesRefusees entrees={entrees.filter((e) => e.statut === "bloquee")} onRelancer={(cle) => file.relancer(cle)}
         onAbandonner={(cle) => file.abandonner(cle)} peutAbandonner={!!profil && profil.role !== "equipe"} onFermer={() => setVoirRefusees(false)} />}
     </div>

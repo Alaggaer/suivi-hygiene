@@ -53,7 +53,8 @@ export function Huile({ tache, onFini, enAttente = [] }: { tache?: Tache; onFini
   const saisies = aFaire.filter(saisie);
   const restantes = aFaire.filter((f) => !saisie(f));
   /** Réponse valable : présente, et pas « filtrée » seule quand le changement est obligatoire. */
-  const decisionOk = (f: Friteuse) => !!eteinte[f.id] || (!!dec[f.id] && !(obligation(f) && dec[f.id] === "filtree"));
+  const decisionOk = (f: Friteuse) => !!eteinte[f.id]
+    || (!!dec[f.id] && !(obligation(f) && dec[f.id] === "filtree") && !(!obligation(f) && dec[f.id] === "plus-tard"));
   const decisionsOk = saisies.every(decisionOk);
   const possible = saisies.length > 0 && decisionsOk;
 
@@ -151,7 +152,7 @@ export function Huile({ tache, onFini, enAttente = [] }: { tache?: Tache; onFini
       )}
       {erreur && <p className="pill bad">{erreur}</p>}
       {aFaire.length > 0 && <button className="bigbtn" disabled={!possible || envoi} onClick={valider}>{libelleBouton}</button>}
-      {pave && <PaveNumerique titre={`${pave.nom} · composés polaires`} unite="%" signe={false} bornes={BORNES_HUILE} onFermer={() => setPave(null)} onValider={(v) => { setVals({ ...vals, [pave.id]: v }); setPave(null); }} />}
+      {pave && <PaveNumerique titre={`${pave.nom} · composés polaires`} unite="%" signe={false} bornes={BORNES_HUILE} onFermer={() => setPave(null)} onValider={(v) => { setVals({ ...vals, [pave.id]: v }); if (v !== vals[pave.id]) { const d = { ...dec }; delete d[pave.id]; setDec(d); } setPave(null); }} />}
     </div>
   );
 }

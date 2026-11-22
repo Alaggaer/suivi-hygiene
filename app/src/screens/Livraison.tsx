@@ -127,11 +127,13 @@ function Reception({ four, onAnnuler, onFini, lancerMinuteur }: { four: Fourniss
   const tempsOk = t.camion !== undefined && t.frais !== undefined && t.surgele !== undefined;
   const controleOk = rien || problemes.length > 0;
   const origineOk = !four.viande || origine !== null;
-  const decisionOk = v.conforme || (!!decision && (decision !== "Une partie refusée" || refuses.trim().length >= 3));
+  // Une réponse donnée quand la livraison semblait non conforme ne compte plus si elle redevient conforme (température corrigée).
+  const dec = v.conforme ? null : decision;
+  const decisionOk = v.conforme || (!!dec && (dec !== "Une partie refusée" || refuses.trim().length >= 3));
   const etapesOk = tempsOk && pages.length > 0 && controleOk && origineOk;
   const pret = etapesOk && decisionOk;
   const manque = !tempsOk ? "Mesurez les températures" : !pages.length ? "Photographiez le bon de livraison" : !controleOk ? "Contrôle des produits : rien à signaler ?"
-    : !origineOk ? "Origine de la viande ?" : !decisionOk ? (decision === "Une partie refusée" ? "Notez les produits refusés" : "Indiquez ce que vous avez fait") : null;
+    : !origineOk ? "Origine de la viande ?" : !decisionOk ? (dec === "Une partie refusée" ? "Notez les produits refusés" : "Indiquez ce que vous avez fait") : null;
 
   async function valider() {
     if (!pret || typeof t.camion !== "number") return;
@@ -145,14 +147,14 @@ function Reception({ four, onAnnuler, onFini, lancerMinuteur }: { four: Fourniss
         t_camion: t.camion, t_frais: num("frais"), t_surgele: num("surgele"),
         photo_bl: photos[0].chemin, photos_bl_suite: photos.slice(1).map((p) => p.chemin),
         viande: !!four.viande, origine_ok: four.viande ? origine ?? undefined : undefined,
-        conforme: v.conforme, motifs: v.conforme ? undefined : v.motifs, action: v.conforme ? undefined : decision ?? undefined,
+        conforme: v.conforme, motifs: v.conforme ? undefined : v.motifs, action: v.conforme ? undefined : dec ?? undefined,
         produits_refuses: !v.conforme && refuses.trim() ? refuses.trim() : undefined, photo_nc: nc?.chemin,
       }, nc ? [...photos, nc] : photos);
       if (!v.conforme) await enregistrer({ type: "anomalies", lignes: [{
         id: nouvelId(), source: "livraison", ref_id: id, categorie: "Livraison", gravite: v.graveTemperature ? "majeure" : "mineure",
-        titre: `Livraison ${four.nom} non conforme : ${v.motifs.join(", ")} · ${decision}${refuses.trim() ? ` (${refuses.trim()})` : ""}`, photo: nc?.chemin,
+        titre: `Livraison ${four.nom} non conforme : ${v.motifs.join(", ")} · ${dec}${refuses.trim() ? ` (${refuses.trim()})` : ""}`, photo: nc?.chemin,
       }] });
-      if (decision === "Tout refusé") {
+      if (dec === "Tout refusé") {
         await enregistrer({ type: "livraison_rangee", livraison_id: id });   // rien à ranger : pas de minuteur
         toast("Livraison refusée enregistrée");
       } else {
@@ -235,7 +237,7 @@ function Reception({ four, onAnnuler, onFini, lancerMinuteur }: { four: Fourniss
 
       {erreur && <p className="pill bad">{erreur}</p>}
       <button className="bigbtn" disabled={!pret || envoi} onClick={valider}>
-        {envoi ? "Enregistrement…" : manque ?? (decision === "Tout refusé" ? "Valider le refus" : "Valider · lancer le rangement (15 min)")}
+        {envoi ? "Enregistrement…" : manque ?? (dec === "Tout refusé" ? "Valider le refus" : "Valider · lancer le rangement (15 min)")}
       </button>
       {pave && (
         <PaveNumerique titre={`${LIBELLES[pave]} · max ${temp(SEUILS_LIVRAISON[pave])}`} unite="°C" signe bornes={BORNES_LIVRAISON[pave]}

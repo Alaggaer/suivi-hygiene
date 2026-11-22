@@ -1,5 +1,5 @@
 import type { Api } from "../types";
-import { cle, type Action, type Existant } from "./parametrage";
+import { cmp, type Action, type Existant } from "./parametrage";
 
 /** Ce qui existe déjà, pour comparer avec le tableau. */
 export async function chargerExistant(api: Api): Promise<Existant> {
@@ -29,8 +29,15 @@ export async function appliquer(api: Api, actions: Action[], progres: (fait: num
     if (a.t === "site_creer") await essayer(a, async () => { await api.siegeCreerRestaurant(a.nom, a.ville, a.ouverture, a.soir); });
     else if (a.t === "site_maj") await essayer(a, () => api.siegeEnregistrer("sites", { ...a.ligne }));
   }
-  const ids = new Map((await api.sitesGestion()).map((s) => [cle(s.nom), s.id]));
-  const site = (r: string) => { const id = ids.get(r); if (!id) throw new Error(`Restaurant ${r} introuvable`); return id; };
+  // Liste des restaurants relue (identifiants des nouveaux). Si la relecture échoue, chaque action le dit, rien n'est perdu.
+  let ids = new Map<string, string>(), relecture: string | null = null;
+  try { ids = new Map((await api.sitesGestion()).map((s) => [cmp(s.nom), s.id])); }
+  catch (e) { relecture = (e as Error).message; }
+  const site = (r: string) => {
+    const id = ids.get(cmp(r));
+    if (!id) throw new Error(relecture ? `liste des restaurants illisible (${relecture}) : relancez l'import` : `Restaurant ${r} introuvable`);
+    return id;
+  };
   for (const a of actions) {
     if (a.t === "enceinte") await essayer(a, () => api.siegeEnregistrer("enceintes", { ...a.ligne, site_id: site(a.restaurant) }));
     else if (a.t === "friteuse") await essayer(a, () => api.siegeEnregistrer("friteuses", { ...a.ligne, site_id: site(a.restaurant) }));

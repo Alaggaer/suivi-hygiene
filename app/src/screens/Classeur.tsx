@@ -73,6 +73,7 @@ export function FormDocument({ types, remplace, photo, demo = false, niveau, onA
   const [expire, setExpire] = useState("");
   const [fichier, setFichier] = useState<Blob | null>(null);
   const [envoi, setEnvoi] = useState(false);
+  const [idSaisie] = useState(() => nouvelId());   // même identifiant si on réessaie : pas de doublon
   const [erreur, setErreur] = useState<string | null>(null);
   const manque = !t ? "Choisissez le type de document" : titre.trim().length < 2 ? "Donnez un titre"
     : t.cle === "formation_hygiene" && personne.trim().length < 2 ? "Qui a suivi la formation ?"
@@ -99,7 +100,7 @@ export function FormDocument({ types, remplace, photo, demo = false, niveau, onA
         <button className="bigbtn" disabled={!!manque || envoi} onClick={async () => {
           setEnvoi(true); setErreur(null);
           try {
-            await onValider({ id: nouvelId(), type_cle: cle, titre: titre.trim(), personne: personne.trim() || undefined, expire_le: t?.expire ? expire : undefined,
+            await onValider({ id: idSaisie, type_cle: cle, titre: titre.trim(), personne: personne.trim() || undefined, expire_le: t?.expire ? expire : undefined,
               remplace: remplace?.id }, fichier!);
           } catch (e) { setErreur((e as Error).message); setEnvoi(false); }
         }}>{manque ?? "Enregistrer"}</button>

@@ -22,7 +22,10 @@ export interface Modele {
 }
 
 /** Clé de comparaison : majuscules, sans accents ni espaces superflus. */
-export const cle = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toUpperCase().replace(/\s+/g, " ").trim();
+export const cle = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[’‘`´]/g, "'").toUpperCase().replace(/\s+/g, " ").trim();
+/** Clé de comparaison : en plus, tirets, apostrophes et points comptent comme des espaces (« Jean-Pierre » = « Jean Pierre », « L'Atelier » = « L Atelier »). */
+export const cmp = (s: string) => cle(s).replace(/[-‐–—'._]/g, " ").replace(/\s+/g, " ").trim();
+export const meme = (a: string, b: string) => cmp(a) === cmp(b);
 const texte = (c: Cellule): string => (c === null || c === undefined ? "" : c instanceof Date ? "" : String(c)).trim();
 
 /** « 09H », « 9h30 », « 18:45 », 0.375 (heure Excel) ou une heure Excel lue comme date → « 09:00 ». null si illisible. */
@@ -102,7 +105,7 @@ export function lireClasseur(classeur: Classeur): Modele {
   for (const { n, o } of lignes("Restaurants", { nom: ["Restaurant"], ville: ["Ville"], resp: ["Responsable"], ouv: ["Ouverture"], soir: ["Début service soir", "Debut service soir"] })) {
     const nom = cle(texte(o.nom)), ville = texte(o.ville).toUpperCase().replace(/\s+/g, " ");
     if (nom.length < 2) { pb("Restaurants", n, "Nom du restaurant manquant"); continue; }
-    if (restaurants.some((r) => r.nom === nom)) { pb("Restaurants", n, `${nom} apparaît deux fois`); continue; }
+    if (restaurants.some((r) => meme(r.nom, nom))) { pb("Restaurants", n, `${nom} apparaît deux fois`); continue; }
     const ouverture = heure(o.ouv), soir = heure(o.soir);
     if (texte(o.ouv) && !ouverture && !(o.ouv instanceof Date) && typeof o.ouv !== "number") pb("Restaurants", n, `Heure d'ouverture illisible : « ${texte(o.ouv)} » (ex. 09h00)`, false);
     if (texte(o.soir) && !soir && !(o.soir instanceof Date) && typeof o.soir !== "number") pb("Restaurants", n, `Heure du service du soir illisible : « ${texte(o.soir)} »`, false);
@@ -111,8 +114,9 @@ export function lireClasseur(classeur: Classeur): Modele {
   const connu = (onglet: string, n: number, r: Cellule) => {
     const nom = cle(texte(r));
     if (!nom) { pb(onglet, n, "Restaurant manquant"); return null; }
-    if (!restaurants.some((x) => x.nom === nom)) { pb(onglet, n, `Restaurant « ${nom} » absent de l'onglet Restaurants`); return null; }
-    return nom;
+    const resto = restaurants.find((x) => meme(x.nom, nom));
+    if (!resto) { pb(onglet, n, `Restaurant « ${nom} » absent de l'onglet Restaurants`); return null; }
+    return resto.nom;
   };
 
   const enceintes: EnceinteTableau[] = [];
@@ -124,7 +128,7 @@ export function lireClasseur(classeur: Classeur): Modele {
     if (neg ? t < -30 || t > -12 : t < 0 || t > 10) {
       pb("Enceintes", n, `${r} · ${nom} : ${t} °C impossible pour ${neg ? "du froid négatif (entre −30 et −12)" : "du froid positif (entre 0 et +10)"}`); continue;
     }
-    if (enceintes.some((e) => e.restaurant === r && cle(e.nom) === cle(nom))) { pb("Enceintes", n, `${r} · ${nom} apparaît deux fois`); continue; }
+    if (enceintes.some((e) => e.restaurant === r && meme(e.nom, nom))) { pb("Enceintes", n, `${r} · ${nom} apparaît deux fois`); continue; }
     enceintes.push({ restaurant: r, nom, t_max: t, ordre: enceintes.filter((e) => e.restaurant === r).length + 1 });
   }
 
@@ -135,7 +139,7 @@ export function lireClasseur(classeur: Classeur): Modele {
     if (nom.length < 2) { pb("Friteuses", n, "Nom de la friteuse manquant"); continue; }
     if (l === null) { pb("Friteuses", n, `${r} · ${nom} : capacité manquante, ligne ignorée`, false); continue; }
     if (l <= 0 || l > 99) { pb("Friteuses", n, `${r} · ${nom} : capacité de ${l} L impossible`); continue; }
-    if (friteuses.some((f) => f.restaurant === r && cle(f.nom) === cle(nom))) { pb("Friteuses", n, `${r} · ${nom} apparaît deux fois`); continue; }
+    if (friteuses.some((f) => f.restaurant === r && meme(f.nom, nom))) { pb("Friteuses", n, `${r} · ${nom} apparaît deux fois`); continue; }
     friteuses.push({ restaurant: r, nom, litres: l });
   }
 
@@ -146,12 +150,12 @@ export function lireClasseur(classeur: Classeur): Modele {
     const role = ROLES[cle(texte(o.role))];
     if (nom.length < 2) { pb("Employés", n, "Prénom manquant"); continue; }
     if (!role) { pb("Employés", n, `${r} · ${nom} : rôle « ${texte(o.role)} » inconnu (Équipe, Chef ou Responsable de site)`); continue; }
-    if (employes.some((e) => e.restaurant === r && cle(e.nom) === cle(nom))) { pb("Employés", n, `${r} · ${nom} apparaît deux fois`); continue; }
+    if (employes.some((e) => e.restaurant === r && meme(e.nom, nom))) { pb("Employés", n, `${r} · ${nom} apparaît deux fois`); continue; }
     employes.push({ restaurant: r, nom, role });
   }
   // Le responsable indiqué dans l'onglet Restaurants, s'il n'a pas sa ligne dans l'onglet Employés.
   for (const r of restaurants) {
-    if (r.responsable && !employes.some((e) => e.restaurant === r.nom && (e.role === "responsable" || cle(e.nom).startsWith(cle(r.responsable!))))) {
+    if (r.responsable && !employes.some((e) => e.restaurant === r.nom && (e.role === "responsable" || meme(e.nom, r.responsable!) || cmp(e.nom).startsWith(cmp(r.responsable!) + " ")))) {
       employes.push({ restaurant: r.nom, nom: r.responsable, role: "responsable" });
     }
   }
@@ -160,7 +164,7 @@ export function lireClasseur(classeur: Classeur): Modele {
   for (const { n, o } of lignes("Fournisseurs", { nom: ["Fournisseur"], produits: ["Produits"], viande: ["Livre de la viande", "Viande"], jours: ["Jours"] })) {
     const nom = cle(texte(o.nom));
     if (nom.length < 2) { pb("Fournisseurs", n, "Nom du fournisseur manquant"); continue; }
-    if (fournisseurs.some((f) => f.nom === nom)) { pb("Fournisseurs", n, `${nom} apparaît deux fois`); continue; }
+    if (fournisseurs.some((f) => meme(f.nom, nom))) { pb("Fournisseurs", n, `${nom} apparaît deux fois`); continue; }
     const p = produits(o.produits), j = jours(o.jours);
     if (p === undefined) pb("Fournisseurs", n, `${nom} : produits « ${texte(o.produits)} » non reconnus (Frais, Sec, Surgelé), laissés tels quels`, false);
     if (j === undefined) pb("Fournisseurs", n, `${nom} : jours « ${texte(o.jours)} » non reconnus (ex. lundi, jeudi), laissés tels quels`, false);
@@ -193,7 +197,7 @@ const hhmm = (t: string) => t.slice(0, 5);
 export function planifier(m: Modele, ex: Existant): Plan {
   const actions: Action[] = [], nonRepris: string[] = [];
   let inchanges = 0;
-  const siteDe = (nom: string) => ex.sites.find((s) => cle(s.nom) === nom);
+  const siteDe = (nom: string) => ex.sites.find((s) => meme(s.nom, nom));
 
   for (const r of m.restaurants) {
     const s = siteDe(r.nom);
@@ -211,31 +215,37 @@ export function planifier(m: Modele, ex: Existant): Plan {
     const s = siteDe(r.nom);
     const exE = s ? ex.enceintes[s.id] ?? [] : [], exF = s ? ex.friteuses[s.id] ?? [] : [], exP = s ? ex.employes[s.id] ?? [] : [];
     for (const e of m.enceintes.filter((x) => x.restaurant === r.nom)) {
-      const v = exE.find((x) => cle(x.nom) === cle(e.nom));
+      const v = exE.find((x) => meme(x.nom, e.nom));
       if (!v) actions.push({ t: "enceinte", libelle: `${r.nom} · nouvelle enceinte ${e.nom} (max ${e.t_max} °C)`, restaurant: r.nom, ligne: { nom: e.nom, t_max: e.t_max, ordre: e.ordre, actif: true } });
       else if (v.t_max !== e.t_max || v.ordre !== e.ordre || !v.actif) {
         actions.push({ t: "enceinte", libelle: `${r.nom} · ${e.nom} : ${[v.t_max !== e.t_max && `max ${v.t_max} → ${e.t_max} °C`, !v.actif && "réactivée", v.ordre !== e.ordre && "ordre"].filter(Boolean).join(", ")}`,
           restaurant: r.nom, ligne: { id: v.id, nom: v.nom, t_max: e.t_max, ordre: e.ordre, actif: true } });
       } else inchanges++;
     }
-    for (const v of exE.filter((x) => x.actif && !m.enceintes.some((e) => e.restaurant === r.nom && cle(e.nom) === cle(x.nom)))) nonRepris.push(`${r.nom} · enceinte ${v.nom}`);
+    for (const v of exE.filter((x) => x.actif && !m.enceintes.some((e) => e.restaurant === r.nom && meme(e.nom, x.nom)))) nonRepris.push(`${r.nom} · enceinte ${v.nom}`);
     for (const f of m.friteuses.filter((x) => x.restaurant === r.nom)) {
-      const v = exF.find((x) => cle(x.nom) === cle(f.nom));
+      const v = exF.find((x) => meme(x.nom, f.nom));
       if (!v) actions.push({ t: "friteuse", libelle: `${r.nom} · nouvelle friteuse ${f.nom} (${f.litres} L)`, restaurant: r.nom, ligne: { nom: f.nom, litres: f.litres, actif: true } });
       else if (v.litres !== f.litres || !v.actif) actions.push({ t: "friteuse", libelle: `${r.nom} · ${f.nom} : ${v.litres} → ${f.litres} L${v.actif ? "" : ", réactivée"}`, restaurant: r.nom, ligne: { id: v.id, nom: v.nom, litres: f.litres, actif: true } });
       else inchanges++;
     }
-    for (const v of exF.filter((x) => x.actif && !m.friteuses.some((f) => f.restaurant === r.nom && cle(f.nom) === cle(x.nom)))) nonRepris.push(`${r.nom} · ${v.nom}`);
-    for (const p of m.employes.filter((x) => x.restaurant === r.nom)) {
-      // Même personne : même nom complet, ou prénom seul déjà enregistré.
-      const v = exP.find((x) => cle(x.nom) === cle(p.nom) || cle(p.nom).startsWith(cle(x.nom) + " "));
+    for (const v of exF.filter((x) => x.actif && !m.friteuses.some((f) => f.restaurant === r.nom && meme(f.nom, x.nom)))) nonRepris.push(`${r.nom} · ${v.nom}`);
+    const duTableau = m.employes.filter((x) => x.restaurant === r.nom);
+    for (const p of duTableau) {
+      // Même personne : même nom complet ; ou prénom seul déjà enregistré, s'il ne peut désigner qu'elle
+      // (« Marie » n'absorbe pas « Marie Curie » si « Marie Dupont » ou une autre « Marie » existe aussi).
+      const prefixe = (court: string, long: string) => cmp(long).startsWith(cmp(court) + " ");
+      const v = exP.find((x) => meme(x.nom, p.nom))
+        ?? exP.find((x) => prefixe(x.nom, p.nom)
+          && !duTableau.some((q) => q !== p && (meme(q.nom, x.nom) || prefixe(x.nom, q.nom)))
+          && exP.filter((y) => prefixe(y.nom, p.nom) || meme(y.nom, x.nom)).length === 1);
       if (!v) actions.push({ t: "employe", libelle: `${r.nom} · nouvel employé ${p.nom} (${{ equipe: "équipe", chef: "chef", responsable: "responsable" }[p.role]})`, restaurant: r.nom, nom: p.nom, role: p.role });
       else inchanges++;   // rôle et code existants conservés : à changer dans Gestion
     }
   }
 
   for (const f of m.fournisseurs) {
-    const v = ex.fournisseurs.find((x) => cle(x.nom) === f.nom);
+    const v = ex.fournisseurs.find((x) => meme(x.nom, f.nom));
     if (!v) {
       actions.push({ t: "fournisseur", libelle: `Nouveau fournisseur ${f.nom}`, ligne: { nom: f.nom, produits: f.produits, viande: !!f.viande, jours_livraison: f.jours, actif: true } });
       continue;
