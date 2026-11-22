@@ -63,12 +63,14 @@ describe("seuils", () => {
       { friteuse_id: "b", jours_utilisation: 15, dernier_changement: null, aujourd_hui_at: null, aujourd_hui_polaires: null, aujourd_hui_non_utilisee: null },
       { friteuse_id: "c", jours_utilisation: 2, dernier_changement: null, aujourd_hui_at: null, aujourd_hui_polaires: null, aujourd_hui_non_utilisee: null },
     ];
-    const op = (lignes: object[]) => ({ type: "huile", at_client: "2026-11-20T10:00:00Z", lignes });
+    const maintenant = new Date().toISOString();
+    const op = (lignes: object[], at_client = maintenant) => ({ type: "huile", at_client, lignes });
     const r = etatAvecEnAttente(base, [
       op([{ friteuse_id: "a", polaires: 12, changement: false }]),
       op([{ friteuse_id: "a", polaires: 13, changement: false }]),          // 2e mesure le même jour : pas de double compte
       op([{ friteuse_id: "b", polaires: 10, changement: true }]),
       op([{ friteuse_id: "c", polaires: null, changement: false, non_utilisee: true }]),
+      op([{ friteuse_id: "c", polaires: 30, changement: true }], new Date(Date.now() - 3 * 86400000).toISOString()), // autre jour : ignorée ici
       { type: "releves", at_client: "2026-11-20T10:00:00Z" },
     ]);
     expect(r.map((e) => e.jours_utilisation)).toEqual([6, 1, 2]);

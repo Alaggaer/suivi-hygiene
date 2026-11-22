@@ -56,7 +56,8 @@ export class FileEnvoi {
         try {
           for (const chemin of e.photos) {
             const blob = await this.stockage.photo(chemin);
-            if (blob) await this.envoyeur.televerserPhoto(chemin, blob);
+            if (!blob) throw new ErreurDefinitive("Photo introuvable sur la tablette (effacée par le navigateur ?) : refaites la saisie");
+            await this.envoyeur.televerserPhoto(chemin, blob);
           }
           await this.envoyeur.executer(e.op);
           await this.stockage.retirer(e.cle);
@@ -75,6 +76,12 @@ export class FileEnvoi {
     } finally {
       await this.publier({ envoiEnCours: false });
     }
+  }
+
+  /** Abandonne une saisie refusée (et ses photos) : elle ne sera jamais envoyée. */
+  async abandonner(cle: number) {
+    const e = (await this.stockage.lister()).find((x) => x.cle === cle);
+    if (e && e.statut === "bloquee") { await this.stockage.retirer(cle); await this.publier(); }
   }
 
   /** Remet une opération bloquée dans la file (après correction côté serveur, par ex.). */

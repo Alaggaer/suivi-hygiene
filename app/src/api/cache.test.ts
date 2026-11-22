@@ -38,6 +38,20 @@ function faux(): Api & { reseau: boolean } {
 }
 
 describe("lectures hors ligne", () => {
+  it("tâches du jour : la copie d'hier n'est pas resservie, et une nouvelle activation vide tout", async () => {
+    const m = memoire(), api = faux(), c = avecCache(api, m);
+    m.set("suivi-hygiene:cache:taches", JSON.stringify({ jour: "2000-01-01", v: [{ id: "vieille" }] }));
+    api.reseau = false;
+    await expect(c.taches()).rejects.toThrow();
+    api.reseau = true; await c.taches(); await c.enceintes();
+    api.reseau = false;
+    expect(await c.taches()).toEqual([]);
+    const vide: string[] = [];
+    const m2: Memoire = { ...m, vider: (p) => vide.push(p) };
+    await avecCache(api, m2).activer("a@b.fr", "x");
+    expect(vide).toEqual(["suivi-hygiene:cache:"]);
+  });
+
   it("ressert la dernière réponse quand le réseau est coupé", async () => {
     const f = faux(), api = avecCache(f, memoire());
     expect(await api.enceintes()).toHaveLength(1);

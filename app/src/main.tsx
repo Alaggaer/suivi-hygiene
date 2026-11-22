@@ -18,6 +18,8 @@ const api = avecCache(demo ? demoApi : supabaseApi(url!, cle!));
 // En démo, la file reste en mémoire (le serveur simulé repart de zéro à chaque chargement).
 const stockage = demo || typeof indexedDB === "undefined" ? stockageMemoire() : stockageIndexedDB();
 const file = new FileEnvoi(stockage, api);
+// Demande au navigateur de ne pas effacer les saisies en attente quand l'espace manque.
+if (!demo) navigator.storage?.persist?.().catch(() => {});
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

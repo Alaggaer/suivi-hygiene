@@ -38,15 +38,18 @@ do $$ begin assert (select count(*) from journal where tbl = 'releves') = 1, 'mo
 -- clôture d'une tâche : heure de la tablette si plausible, sinon heure du serveur ; personne d'un autre site refusée
 do $$ declare t uuid; begin
   select id into t from taches where titre = 'Huile';
-  perform terminer_tache(t, '00000000-0000-0000-0000-0000000000a2', now());
+  begin
+    perform terminer_tache(t, '00000000-0000-0000-0000-0000000000a2', now());
+    raise exception 'ÉCHEC : personne d''un autre site clôt la tâche';
+  exception when insufficient_privilege then null; end;
   assert (select faite_at from taches where id = t) is null, 'personne d''un autre site ne peut pas clore la tâche';
   perform terminer_tache(t, '00000000-0000-0000-0000-0000000000a1', now() - interval '40 minutes');
   assert (select faite_at from taches where id = t) between now() - interval '41 minutes' and now() - interval '39 minutes', 'heure hors ligne retenue';
   perform terminer_tache(t, '00000000-0000-0000-0000-0000000000a1', now());
   assert (select faite_at from taches where id = t) < now() - interval '39 minutes', 'tâche déjà faite : pas réécrite';
   select id into t from taches where titre = 'Relevé matin';
-  perform terminer_tache(t, '00000000-0000-0000-0000-0000000000a1', now() - interval '3 days');
-  assert (select faite_at from taches where id = t) > now() - interval '1 minute', 'horloge déréglée : heure du serveur';
+  perform terminer_tache(t, '00000000-0000-0000-0000-0000000000a1', now() - interval '10 days');
+  assert (select faite_at from taches where id = t) > now() - interval '1 minute', 'horloge déréglée (plus de 7 jours) : heure du serveur';
   assert (select count(*) from taches_du_jour() where faite_par_nom = 'Karim') = 2, 'taches_du_jour donne le nom';
 end $$;
 
@@ -832,5 +835,19 @@ do $$ begin
   assert has_function_privilege('authenticated', 'verifier_pin(uuid,text)', 'EXECUTE'), 'les tablettes gardent leurs fonctions';
   assert not has_function_privilege('authenticated', 'escalader()', 'EXECUTE'), 'les fonctions internes restent fermées';
   assert (select count(distinct pin_aleatoire()) from generate_series(1, 50)) > 30, 'PIN variés';
+end $$;
+-- hors ligne : opérations rejouées, heure réelle jusqu'à 7 jours
+update auth.claims set jwt = '{"app_metadata":{"role":"siege"}}';
+do $$ declare l uuid := '00000000-0000-0000-0000-0000000000d1'; begin
+  perform marquer_rangee(l, now());
+  perform marquer_rangee(l, now());   -- renvoi : déjà rangée, pas d'erreur
+  begin
+    perform marquer_rangee(gen_random_uuid(), now());
+    raise exception 'ÉCHEC : rangement d''une livraison inconnue ignoré sans erreur';
+  exception when no_data_found then null; end;
+  perform archiver_document('00000000-0000-0000-0000-00000000d003', null);
+  perform archiver_document('00000000-0000-0000-0000-00000000d003', null);   -- renvoi : déjà retiré
+  assert heure_effective(now(), now() - interval '3 days') = now() - interval '3 days', 'week-end hors ligne : heure réelle gardée';
+  assert heure_effective(now(), now() - interval '8 days') = now(), 'au-delà de 7 jours : heure de réception';
 end $$;
 \echo TOUS_LES_TESTS_SQL_OK

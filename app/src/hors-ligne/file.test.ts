@@ -27,6 +27,18 @@ function serveur() {
 
 function suite(nom: string, fabrique: () => Stockage) {
   describe(`file d'envoi (${nom})`, () => {
+    it("saisie refusée : peut être abandonnée, ne bloque plus la suite", async () => {
+      const s = serveur(), st = fabrique(), f = new FileEnvoi(st, s.envoyeur);
+      s.refuser("a");
+      await f.ajouter(op("a")); await f.ajouter(op("b"));
+      await f.vider();
+      const [bloquee] = await st.lister();
+      expect(bloquee.statut).toBe("bloquee");
+      await f.abandonner(bloquee.cle);
+      expect(await st.lister()).toEqual([]);
+      expect(s.recu).toEqual(["b"]);
+    });
+
     it("envoie dans l'ordre puis vide la file", async () => {
       const s = serveur(), st = fabrique(), f = new FileEnvoi(st, s.envoyeur);
       await f.ajouter(op("a")); await f.ajouter(op("b")); await f.ajouter(op("c"));

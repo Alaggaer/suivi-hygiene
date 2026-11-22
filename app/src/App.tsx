@@ -164,7 +164,8 @@ export default function App({ api, file }: { api: Api; file: FileEnvoi }) {
       {erreur && profil && <div className="demo" style={{ background: "var(--bad-bg)", color: "var(--bad)" }}>{erreur}</div>}
       {profil && <Bandeau minuteurs={minuteurs.liste} retirer={minuteurs.retirer} />}
       <main id="main">{corps}</main>
-      {voirRefusees && <SaisiesRefusees entrees={entrees.filter((e) => e.statut === "bloquee")} onRelancer={(cle) => file.relancer(cle)} onFermer={() => setVoirRefusees(false)} />}
+      {voirRefusees && <SaisiesRefusees entrees={entrees.filter((e) => e.statut === "bloquee")} onRelancer={(cle) => file.relancer(cle)}
+        onAbandonner={(cle) => file.abandonner(cle)} peutAbandonner={!!profil && profil.role !== "equipe"} onFermer={() => setVoirRefusees(false)} />}
     </div>
   );
   return site && profil ? <ContexteProvider valeur={{ api, file, site, profil }}>{contenu}</ContexteProvider> : contenu;
@@ -261,21 +262,32 @@ const LIBELLE_OP: Record<string, string> = {
   releves: "Relevé de températures", huile: "Mesure de l'huile", anomalies: "Signalement d'anomalie", terminer_tache: "Tâche terminée",
   livraison: "Réception de livraison", livraison_rangee: "Livraison rangée", utilisation: "Traçabilité produit",
   minuteur: "Refroidissement / remise en température", anomalie_statut: "Suivi d'anomalie",
+  stock_mort: "Vérification de stock mort", reponse_alerte: "Réponse à une alerte produit", nettoyage_fait: "Élément de nettoyage",
+  controle_fait: "Contrôle PMS", verification_mesure: "Vérification de sonde", action_planifiee: "Action prévue",
+  visite: "Visite ou audit", analyses: "Résultats d'analyses", document_pms: "Document du PMS", document_archive: "Retrait d'un document",
 };
 
 /** Saisies que le serveur a refusées : ce que c'était, quand, pourquoi, et un bouton pour réessayer. */
-function SaisiesRefusees({ entrees, onRelancer, onFermer }: { entrees: Entree[]; onRelancer: (cle: number) => void; onFermer: () => void }) {
+function SaisiesRefusees({ entrees, onRelancer, onAbandonner, peutAbandonner, onFermer }: {
+  entrees: Entree[]; onRelancer: (cle: number) => void; onAbandonner: (cle: number) => void; peutAbandonner: boolean; onFermer: () => void;
+}) {
+  const [aAbandonner, setAAbandonner] = useState<number | null>(null);
   return (
     <div id="sheet" className="open" role="dialog" aria-modal="true" aria-label="Saisies refusées" onClick={(e) => e.target === e.currentTarget && onFermer()}>
       <div className="pad refusees">
         <h3>Saisies refusées par le serveur</h3>
-        <p className="hint">Elles sont gardées sur la tablette et n'ont pas été enregistrées. Réessayez ; si le refus continue, prévenez le siège avec le motif affiché.</p>
+        <p className="hint">Elles sont gardées sur la tablette et n'ont pas été enregistrées. Réessayez ; si le refus continue, prévenez le siège avec le motif affiché. Le chef ou le responsable peut abandonner une saisie qui ne passera jamais (à refaire correctement).</p>
         {!entrees.length && <p className="pill ok">Plus aucune saisie refusée.</p>}
         {entrees.map((e) => (
           <div key={e.cle} className="refusee">
             <div><b>{LIBELLE_OP[e.op.type] ?? e.op.type}</b> · <span className="hint">{new Date(e.op.at_client).toLocaleString("fr-FR", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</span></div>
             <div className="hint">Motif : {e.erreur ?? "inconnu"}</div>
-            <button className="opt" onClick={() => onRelancer(e.cle)}>Réessayer</button>
+            <div className="opts">
+              <button className="opt" onClick={() => onRelancer(e.cle)}>Réessayer</button>
+              {peutAbandonner && (aAbandonner === e.cle
+                ? <><button className="opt sel bad" onClick={() => { setAAbandonner(null); onAbandonner(e.cle); }}>Confirmer : ne jamais l'envoyer</button><button className="lien" onClick={() => setAAbandonner(null)}>annuler</button></>
+                : <button className="lien" onClick={() => setAAbandonner(e.cle)}>Abandonner</button>)}
+            </div>
           </div>
         ))}
         <button className="bigbtn" onClick={onFermer}>Fermer</button>

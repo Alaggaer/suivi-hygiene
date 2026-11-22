@@ -60,6 +60,8 @@ export function etatAvecEnAttente(etat: EtatFriteuse[], ops: { type: string; at_
   const r = etat.map((e) => ({ ...e }));
   for (const op of ops) {
     if (op.type !== "huile") continue;
+    const jourOp = new Date(op.at_client).toLocaleDateString("sv-SE", { timeZone: "Europe/Paris" });
+    if (jourOp !== new Date().toLocaleDateString("sv-SE", { timeZone: "Europe/Paris" })) continue;   // mesure d'un autre jour, déjà comptée par le serveur à son arrivée
     for (const l of op.lignes as { friteuse_id: string; polaires: number | null; changement: boolean; non_utilisee?: boolean }[]) {
       const e = r.find((x) => x.friteuse_id === l.friteuse_id);
       if (!e) continue;

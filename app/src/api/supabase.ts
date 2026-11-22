@@ -22,9 +22,22 @@ function verifier(r: { error: { message: string } | null; status?: number }): vo
 export function supabaseApi(url: string, cleAnon: string): Api {
   const sb: SupabaseClient = createClient(url, cleAnon, { auth: { persistSession: true, storageKey: "suivi-hygiene-tablette" } });
 
-  async function siteId(): Promise<string> {
+  /**
+   * Compte de la tablette, même si le jeton a expiré pendant une coupure réseau : supabase-js renvoie alors
+   * « pas de session » tant qu'il ne peut pas la renouveler, mais la session gardée sur la tablette reste
+   * valable (elle sera renouvelée au retour du réseau). La tablette ne doit pas retomber sur l'écran d'activation.
+   */
+  async function compte(): Promise<{ site_id?: string; role?: string } | null> {
     const { data } = await sb.auth.getSession();
-    const id = data.session?.user.app_metadata?.site_id as string | undefined;
+    if (data.session) return (data.session.user.app_metadata ?? {}) as { site_id?: string; role?: string };
+    try {
+      const brut = localStorage.getItem("suivi-hygiene-tablette");
+      const s = brut ? JSON.parse(brut) as { refresh_token?: string; user?: { app_metadata?: { site_id?: string; role?: string } } } : null;
+      return s?.refresh_token ? s.user?.app_metadata ?? {} : null;
+    } catch { return null; }
+  }
+  async function siteId(): Promise<string> {
+    const id = (await compte())?.site_id;
     if (!id) throw new Error("Cette tablette n'est rattachée à aucun site. Demandez au siège de l'activer.");
     return id;
   }
@@ -66,7 +79,7 @@ export function supabaseApi(url: string, cleAnon: string): Api {
 
   return {
     mode: "supabase",
-    async estActivee() { const { data } = await sb.auth.getSession(); return !!data.session; },
+    async estActivee() { return (await compte()) !== null; },
     async activer(email, motDePasse) {
       const { error } = await sb.auth.signInWithPassword({ email, password: motDePasse });
       if (error) throw new Error("Identifiants refusés. Vérifiez l'adresse et le mot de passe de la tablette.");
@@ -95,10 +108,7 @@ export function supabaseApi(url: string, cleAnon: string): Api {
       return (ok(await sb.rpc("etat_friteuses")) as (EtatFriteuse & { aujourd_hui_polaires: string | number | null })[])
         .map((e) => ({ ...e, aujourd_hui_polaires: e.aujourd_hui_polaires === null ? null : Number(e.aujourd_hui_polaires) }));
     },
-    async estSiege() {
-      const { data } = await sb.auth.getSession();
-      return data.session?.user.app_metadata?.role === "siege";
-    },
+    async estSiege() { return (await compte())?.role === "siege"; },
     async tableauSiege(jours) { return ok(await sb.rpc("tableau_siege_v2", { p_jours: jours })) as LigneSiege[]; },
     async fournisseursNonConformes(jours) { return ok(await sb.rpc("fournisseurs_non_conformes", { p_jours: jours })) as FournisseurNC[]; },
     async etatRestaurants() {
@@ -265,9 +275,11 @@ export function supabaseApi(url: string, cleAnon: string): Api {
     async televerserPhoto(chemin, blob) {
       const { error } = await sb.storage.from("photos").upload(chemin, blob, { contentType: blob.type || "image/webp", upsert: false });
       if (!error) return;
-      const e = error as { message: string; statusCode?: string };
-      if (e.statusCode === "409" || /exists|duplicate/i.test(e.message)) return; // déjà envoyée lors d'un essai précédent
-      throw estPassager(Number(e.statusCode) || undefined) ? new Error(e.message) : new ErreurDefinitive(e.message);
+      // storage-js donne le code HTTP dans `status` (certaines versions dans `statusCode`).
+      const e = error as { message: string; status?: number | string; statusCode?: number | string };
+      const code = Number(e.status ?? e.statusCode) || undefined;
+      if (code === 409 || /exists|duplicate/i.test(e.message)) return; // déjà envoyée lors d'un essai précédent
+      throw estPassager(code) ? new Error(e.message) : new ErreurDefinitive(e.message);
     },
 
     async executer(op: Operation) {
