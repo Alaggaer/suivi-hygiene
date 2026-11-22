@@ -50,7 +50,7 @@ def test_livraison_hors_temperature_refus_partiel(page):
     page.wait_for_selector(".liv-ligne:has-text('Pomona'):has-text('Refus partiel')")
     assert "refusé : Salade, herbes fraîches" in page.locator(".liv-ligne:has-text('Pomona')").inner_text()
     page.click("text=← Retour")
-    page.wait_for_selector(".act .badge:text-is('2')", timeout=3000)
+    page.wait_for_selector(".act:has-text('Anomalies du site') .badge:text-is('3')", timeout=5000)   # 2 en démo + celle de la livraison
 
 def test_livraison_fournisseur_sec_camion_seulement(page):
     connecter(page)
