@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
-import type { ActionPlan, Api, AppareilMesure, ControleSite, EtatVisites, ModeleControle, PmsGroupe, RubriqueControle, Visite } from "../types";
+import type { ClasseurSite, DocumentArchive, DocumentPms, TypeDocument, ActionPlan, Api, AppareilMesure, ControleSite, EtatVisites, ModeleControle, PmsGroupe, RubriqueControle, Visite } from "../types";
 import { EtatEurofins, FormAnalyses, FormVisite, LIBELLE_VISITE, ListeVisites } from "./Visites";
+import { Attendus, FormDocument, ListeArchives, ListeClasseur } from "./Classeur";
+import { useFiche } from "./Nettoyage";
 import { actionEnRetard, ETAT_CONTROLE } from "../logique";
 import { useDocument } from "./AlertesProduit";
 
@@ -13,7 +15,7 @@ const aFaire = (l: { etat: string }[]) => l.filter((c) => c.etat === "retard" ||
 
 /** Siège : PMS de tout le groupe (plan d'action, contrôles, sondes) et réglage des contrôles périodiques. */
 export function PmsSiege({ api }: { api: Api }) {
-  const [onglet, setOnglet] = useState<"groupe" | "modeles">("groupe");
+  const [onglet, setOnglet] = useState<"groupe" | "modeles" | "documents">("groupe");
   const [resto, setResto] = useState<{ id: string; nom: string } | null>(null);
   return (
     <main className="s3-main">
@@ -22,8 +24,9 @@ export function PmsSiege({ api }: { api: Api }) {
         <div className="s3-filtres" role="tablist">
           <button role="tab" className={`opt ${onglet === "groupe" ? "sel" : ""}`} onClick={() => setOnglet("groupe")}>Restaurants</button>
           <button role="tab" className={`opt ${onglet === "modeles" ? "sel" : ""}`} onClick={() => setOnglet("modeles")}>Contrôles à faire</button>
+          <button role="tab" className={`opt ${onglet === "documents" ? "sel" : ""}`} onClick={() => setOnglet("documents")}>Documents du groupe</button>
         </div>
-        {onglet === "groupe" ? <Groupe api={api} onOuvrir={setResto} /> : <Modeles api={api} />}
+        {onglet === "groupe" ? <Groupe api={api} onOuvrir={setResto} /> : onglet === "modeles" ? <Modeles api={api} /> : <DocumentsSiege api={api} siteId={null} />}
       </>}
     </main>
   );
@@ -31,14 +34,18 @@ export function PmsSiege({ api }: { api: Api }) {
 
 function Groupe({ api, onOuvrir }: { api: Api; onOuvrir: (r: { id: string; nom: string }) => void }) {
   const [l, setL] = useState<PmsGroupe[] | null>(null);
+  const [docs, setDocs] = useState<Record<string, { manquants: number; expires: number; bientot: number }>>({});
   const [erreur, setErreur] = useState<string | null>(null);
-  useEffect(() => { api.pmsGroupe().then(setL).catch((e) => setErreur((e as Error).message)); }, [api]);
+  useEffect(() => {
+    api.pmsGroupe().then(setL).catch((e) => setErreur((e as Error).message));
+    api.documentsGroupe().then((x) => setDocs(Object.fromEntries(x.map((d) => [d.site_id, d])))).catch(() => {});
+  }, [api]);
   if (erreur) return <p className="pill bad">{erreur}</p>;
   if (!l) return <p className="hint">Chargement…</p>;
   const cell = (n: number, total: number) => <span className={`pill ${n ? "bad" : "ok"}`}>{n ? `${n} à faire` : total ? "à jour" : "—"}</span>;
   return (
     <section className="s3-bloc">
-      <div className="table-scroll"><table className="tbl pms-groupe"><thead><tr><th>Restaurant</th><th>Plan d'action</th><th>Entretien</th><th>Nuisibles</th><th>Sondes</th><th>Visites et analyses</th></tr></thead><tbody>
+      <div className="table-scroll"><table className="tbl pms-groupe"><thead><tr><th>Restaurant</th><th>Plan d'action</th><th>Entretien</th><th>Nuisibles</th><th>Sondes</th><th>Visites et analyses</th><th>Documents</th></tr></thead><tbody>
         {l.map((r) => {
           const ent = r.controles.filter((c) => c.rubrique === "entretien"), nui = r.controles.filter((c) => c.rubrique === "nuisibles");
           return (
@@ -52,6 +59,10 @@ function Groupe({ api, onOuvrir }: { api: Api; onOuvrir: (r: { id: string; nom: 
               <td><span className={`pill ${ETAT_CONTROLE[r.visites.etat_eurofins].classe}`}>Eurofins : {r.visites.etat_eurofins === "jamais" ? "aucune" : ETAT_CONTROLE[r.visites.etat_eurofins].libelle.toLowerCase()}</span>
                 {r.derniere_visite?.note != null && <span className="hint"> · {LIBELLE_VISITE[r.derniere_visite.type]} {r.derniere_visite.note} %</span>}
                 {r.analyses_non_satisfaisantes > 0 && <> <span className="pill bad">{r.analyses_non_satisfaisantes} analyse{r.analyses_non_satisfaisantes > 1 ? "s" : ""} non satisfaisante{r.analyses_non_satisfaisantes > 1 ? "s" : ""}</span></>}</td>
+              <td>{docs[r.site_id] ? (docs[r.site_id].manquants + docs[r.site_id].expires
+                ? <span className="pill bad">{docs[r.site_id].manquants + docs[r.site_id].expires} manquant{docs[r.site_id].manquants + docs[r.site_id].expires > 1 ? "s" : ""} ou expiré{docs[r.site_id].manquants + docs[r.site_id].expires > 1 ? "s" : ""}</span>
+                : <span className="pill ok">complet</span>) : null}
+                {docs[r.site_id]?.bientot > 0 && <> <span className="pill warn">{docs[r.site_id].bientot} à renouveler</span></>}</td>
             </tr>
           );
         })}
@@ -126,6 +137,7 @@ function FichePms({ api, siteId, nom, onRetour }: { api: Api; siteId: string; no
           ))}</tbody></table></div>
         </section>
       ))}
+      <DocumentsSiege api={api} siteId={siteId} />
       <section className="s3-bloc">
         <h2>Visites et analyses</h2>
         {visites && <EtatEurofins e={visites} />}
@@ -250,6 +262,38 @@ function FormModele({ m, onAnnuler, onValider }: { m: ModeleControle; onAnnuler:
         <button className="opt" onClick={onAnnuler}>Annuler</button>
         <button className="s3-verifier" disabled={x.titre.trim().length < 3} onClick={() => onValider({ ...x, titre: x.titre.trim() })}>{x.titre.trim().length < 3 ? "Nom du contrôle" : "Enregistrer"}</button>
       </div>
+    </section>
+  );
+}
+
+/** Classeur : documents du groupe (siteId null) ou d'un restaurant. Le siège dépose, remplace et retire. */
+function DocumentsSiege({ api, siteId }: { api: Api; siteId: string | null }) {
+  const [c, setC] = useState<ClasseurSite | null>(null);
+  const [types, setTypes] = useState<TypeDocument[]>([]);
+  const [form, setForm] = useState<{ remplace: DocumentPms | null } | null>(null);
+  const [archives, setArchives] = useState<DocumentArchive[] | null>(null);
+  const [msg, setMsg] = useState<{ ok: boolean; t: string } | null>(null);
+  const fiche = useFiche(api);
+  const charger = () => api.documentsSite(siteId).then(setC).catch((e) => setMsg({ ok: false, t: (e as Error).message }));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { charger(); api.typesDocuments().then(setTypes).catch(() => {}); }, [api, siteId]);
+  const docs = (c?.documents ?? []).filter((d) => (siteId ? !d.groupe : d.groupe));
+  return (
+    <section className="s3-bloc">
+      <h2>{siteId ? "Documents du restaurant" : "Documents du groupe"}</h2>
+      <p className="hint">{siteId ? "Les documents du groupe s'ajoutent automatiquement à chaque restaurant." : "Visibles par tous les restaurants, sur leurs tablettes, même sans réseau."}</p>
+      {msg && <p className={`pill ${msg.ok ? "ok" : "bad"}`}>{msg.t}</p>}
+      <fiche.Vue />
+      {siteId && c && <Attendus c={c} />}
+      {form
+        ? <FormDocument types={types} remplace={form.remplace} photo={false} niveau={siteId ? "site" : "groupe"} onAnnuler={() => setForm(null)} onValider={async (d, f) => {
+            await api.siegeEnregistrerDocument(siteId, d, f as File); setForm(null); setMsg({ ok: true, t: "Document enregistré" }); await charger();
+          }} />
+        : <button className="s3-verifier" onClick={() => setForm({ remplace: null })}>+ Ajouter un document</button>}
+      {c && <ListeClasseur docs={docs} ouvrir={fiche.ouvrir} peutModifier={() => true} onRemplacer={(d) => setForm({ remplace: d })}
+        onRetirer={async (d) => { try { await api.siegeArchiverDocument(d.id); setMsg({ ok: true, t: "Document retiré (archivé)" }); await charger(); } catch (e) { setMsg({ ok: false, t: (e as Error).message }); } }} />}
+      {archives ? <><h3>Archives</h3><ListeArchives l={archives.filter((a) => (siteId ? !a.groupe : a.groupe))} ouvrir={fiche.ouvrir} /></>
+        : <button className="lien" onClick={() => api.documentsArchives(siteId).then(setArchives).catch(() => setArchives([]))}>Voir les anciennes versions</button>}
     </section>
   );
 }

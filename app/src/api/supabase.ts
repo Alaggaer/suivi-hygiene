@@ -1,5 +1,5 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
-import type { EtatVisites, ActionPlan, AppareilMesure, ControleSite, ModeleControle, PmsGroupe, ElementNettoyage, NettoyageSiege, ProduitEntretien, TacheNettoyage, AlerteProduit, AlerteSiege, Anomalie, AnomalieSiege, Api, Correction, Employe, EnceinteGestion, FournisseurGestion, FriteuseGestion, LivraisonJour, ModeleTache, SiteGestion, StockMort, StockMortSiege, Tablette, Enceinte, Friteuse, EtatRestaurant, JourHistorique, Preuves, EtatFriteuse, Fournisseur, FournisseurNC, LigneSiege, SeuilsHuile, Site, Tache } from "../types";
+import type { ClasseurSite, DocumentArchive, TypeDocument, EtatVisites, ActionPlan, AppareilMesure, ControleSite, ModeleControle, PmsGroupe, ElementNettoyage, NettoyageSiege, ProduitEntretien, TacheNettoyage, AlerteProduit, AlerteSiege, Anomalie, AnomalieSiege, Api, Correction, Employe, EnceinteGestion, FournisseurGestion, FriteuseGestion, LivraisonJour, ModeleTache, SiteGestion, StockMort, StockMortSiege, Tablette, Enceinte, Friteuse, EtatRestaurant, JourHistorique, Preuves, EtatFriteuse, Fournisseur, FournisseurNC, LigneSiege, SeuilsHuile, Site, Tache } from "../types";
 import { ErreurDefinitive, type Operation } from "../operations";
 
 /**
@@ -141,6 +141,15 @@ export function supabaseApi(url: string, cleAnon: string): Api {
         .map((a) => ({ ...a, dernier: a.dernier && { ...a.dernier, valeur: a.dernier.valeur === null ? null : Number(a.dernier.valeur) } }));
     },
     async ajouterAppareil(profilId, nom, type, numero) { verifier(await sb.rpc("ajouter_appareil", { p_profil: profilId, p_nom: nom, p_type: type, p_numero: numero })); },
+    async typesDocuments() { return ok(await sb.from("documents_types").select("cle, libelle, rubrique, niveau, obligatoire, expire, ordre").order("rubrique").order("ordre")) as TypeDocument[]; },
+    async documentsSite(siteId) { return ok(await sb.rpc("documents_site", { p_site: siteId })) as ClasseurSite; },
+    async documentsArchives(siteId) { return ok(await sb.rpc("documents_archives", { p_site: siteId })) as DocumentArchive[]; },
+    async documentsGroupe() { return ok(await sb.rpc("documents_groupe")) as { site_id: string; manquants: number; expires: number; bientot: number }[]; },
+    async siegeEnregistrerDocument(siteId, d, fichier) {
+      const chemin = await this.siegeDeposerDocument(fichier);
+      verifier(await sb.rpc("enregistrer_document", { p: { ...d, site_id: siteId, fichier: chemin } }));
+    },
+    async siegeArchiverDocument(id) { verifier(await sb.rpc("archiver_document", { p_id: id, p_profil: null })); },
     async etatVisites(siteId) {
       const e = ok(await sb.rpc("etat_visites", { p_site: siteId })) as EtatVisites;
       return { ...e, visites: e.visites.map((v) => ({ ...v, note: v.note === null ? null : Number(v.note) })) };
@@ -302,6 +311,12 @@ export function supabaseApi(url: string, cleAnon: string): Api {
         case "stock_mort":
           await inserer("inventaires_stock", [{ id: op.id, ...commun, produit_id: op.produit_id, reste: op.reste, quantite: op.quantite ?? null,
             dlc: op.dlc ?? null, photo: op.photo ?? null, decision: op.decision ?? null, transfert_vers: op.transfert_vers ?? null }]);
+          break;
+        case "document_pms":
+          verifier(await sb.rpc("enregistrer_document", { p: { ...op.document, fichier: op.fichier, profil: op.par, at_client: op.at_client } }));
+          break;
+        case "document_archive":
+          verifier(await sb.rpc("archiver_document", { p_id: op.document_id, p_profil: op.par }));
           break;
         case "visite":
           verifier(await sb.rpc("enregistrer_visite", { p: { ...op.visite, rapport: op.rapport ?? null, profil: op.par, at_client: op.at_client } }));

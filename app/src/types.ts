@@ -77,6 +77,17 @@ export interface PmsGroupe {
   actions_ouvertes: number; actions_en_retard: number; actions_sans_plan: number;
 }
 
+/* ---------- Classeur des documents du PMS ---------- */
+export type RubriqueDocument = "haccp" | "formation" | "administratif" | "contrats" | "nuisibles" | "autre";
+export interface TypeDocument { cle: string; libelle: string; rubrique: RubriqueDocument; niveau: "groupe" | "site"; obligatoire: boolean; expire: boolean; ordre: number }
+export interface DocumentPms {
+  id: string; groupe: boolean; type_cle: string; type: string; rubrique: RubriqueDocument; titre: string; fichier: string;
+  expire_le: string | null; personne: string | null; par: string | null; at: string; etat: EtatControle;
+}
+export interface ClasseurSite { documents: DocumentPms[]; attendus: { cle: string; libelle: string; rubrique: RubriqueDocument; niveau: "groupe" | "site"; present: boolean }[] }
+export interface DocumentArchive { id: string; groupe: boolean; type: string; titre: string; fichier: string; expire_le: string | null; personne: string | null; at: string; archive_at: string }
+export interface DocumentSaisie { id: string; type_cle: string; titre: string; expire_le?: string; personne?: string; remplace?: string }
+
 /* ---------- Plan de nettoyage et de désinfection ---------- */
 export interface ProduitEntretien {
   id?: string; nom: string; usage: string | null; dilution: string | null; temps_contact: string | null;
@@ -224,6 +235,14 @@ export interface Api {
   /** En ligne seulement : le chef ou le responsable ajoute une sonde ou un thermomètre. */
   ajouterAppareil(profilId: string, nom: string, type: AppareilMesure["type"], numero: string): Promise<void>;
   pmsGroupe(): Promise<PmsGroupe[]>;
+  typesDocuments(): Promise<TypeDocument[]>;
+  /** siteId null (siège) : les documents du groupe seulement. */
+  documentsSite(siteId: string | null): Promise<ClasseurSite>;
+  documentsArchives(siteId: string | null): Promise<DocumentArchive[]>;
+  documentsGroupe(): Promise<{ site_id: string; manquants: number; expires: number; bientot: number }[]>;
+  /** siteId null : document du groupe (visible par tous les restaurants). */
+  siegeEnregistrerDocument(siteId: string | null, d: DocumentSaisie, fichier: File): Promise<void>;
+  siegeArchiverDocument(id: string): Promise<void>;
   etatVisites(siteId: string): Promise<EtatVisites>;
   siegeEnregistrerVisite(siteId: string, v: VisiteSaisie, rapport: File | null): Promise<void>;
   siegeAjouterAnalyses(visiteId: string, analyses: AnalyseSaisie[], rapport: File | null): Promise<void>;

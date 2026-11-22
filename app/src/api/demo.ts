@@ -1,4 +1,4 @@
-import type { AnalyseSaisie, EtatVisites, Visite, VisiteSaisie, ActionPlan, AppareilMesure, ControleSite, ModeleControle, ElementATaire, ElementNettoyage, ProduitEntretien, TacheNettoyage, AlerteSiege, ReponseAlerte, Api, Anomalie, AnomalieSiege, Correction, DecisionStock, Employe, EnceinteGestion, FournisseurGestion, FriteuseGestion, ModeleTache, SiteGestion, Tablette, EtatStock, LivraisonJour, Rattrapage, EtatRestaurant, EtatFriteuse, Preuves, Profil, Tache } from "../types";
+import type { ClasseurSite, DocumentSaisie, TypeDocument, AnalyseSaisie, EtatVisites, Visite, VisiteSaisie, ActionPlan, AppareilMesure, ControleSite, ModeleControle, ElementATaire, ElementNettoyage, ProduitEntretien, TacheNettoyage, AlerteSiege, ReponseAlerte, Api, Anomalie, AnomalieSiege, Correction, DecisionStock, Employe, EnceinteGestion, FournisseurGestion, FriteuseGestion, ModeleTache, SiteGestion, Tablette, EtatStock, LivraisonJour, Rattrapage, EtatRestaurant, EtatFriteuse, Preuves, Profil, Tache } from "../types";
 import { ErreurDefinitive, type Operation } from "../operations";
 import { lectureConforme, transitionPermise } from "../logique";
 
@@ -126,6 +126,38 @@ function ajouterAnalysesDemo(visiteId: string, l: AnalyseSaisie[], rapport: stri
     if (a.resultat === "non_satisfaisant") anomalies.unshift({ id: `aa-${a.id}`, titre: `Analyse non satisfaisante : ${a.objet}${a.detail ? ` (${a.detail})` : ""}`,
       categorie: "Analyse bactériologique", gravite: "majeure", statut: "ouverte", cree_at: iso(Date.now()), source: "analyse" });
   }
+}
+const typesDocsDemo: TypeDocument[] = ([
+  ["plan_haccp", "Plan HACCP et analyse des dangers", "haccp", "groupe", true, false], ["procedures", "Procédures et bonnes pratiques d'hygiène", "haccp", "groupe", true, false],
+  ["tracabilite", "Procédure de traçabilité et de retrait-rappel", "haccp", "groupe", true, false],
+  ["formation_hygiene", "Attestation de formation à l'hygiène alimentaire", "formation", "site", true, false],
+  ["declaration_ddpp", "Déclaration d'activité ou agrément (DDPP)", "administratif", "site", true, false],
+  ["contrat_3d", "Contrat de dératisation et désinsectisation", "nuisibles", "site", true, true], ["plan_appats", "Plan de positionnement des appâts", "nuisibles", "site", true, false],
+  ["contrat_eurofins", "Contrat avec le laboratoire (Eurofins)", "contrats", "groupe", true, true], ["contrat_hotte", "Contrat d'entretien de la hotte et des conduits", "contrats", "site", false, true],
+  ["autre", "Autre document", "autre", "site", false, false],
+] as const).map(([cle, libelle, rubrique, niveau, obligatoire, expire], i) => ({ cle, libelle, rubrique, niveau, obligatoire, expire, ordre: i }));
+type DocDemo = { id: string; site: string | null; type_cle: string; titre: string; fichier: string; expire_le: string | null; personne: string | null; par: string; at: string; actif: boolean; archive_at: string | null };
+const docsDemo: DocDemo[] = [
+  { id: "d1", site: null, type_cle: "plan_haccp", titre: "Plan HACCP groupe 2026", fichier: "demo/s2.webp", expire_le: null, personne: null, par: "Siège", at: iso(t0 - 90 * 24 * 60 * MIN), actif: true, archive_at: null },
+  { id: "d2", site: null, type_cle: "contrat_eurofins", titre: "Contrat Eurofins 2026", fichier: "demo/s2.webp", expire_le: jourDemo(200), personne: null, par: "Siège", at: iso(t0 - 200 * 24 * 60 * MIN), actif: true, archive_at: null },
+  { id: "d3", site: "s3", type_cle: "contrat_3d", titre: "Contrat Rentokil", fichier: "demo/s1.webp", expire_le: jourDemo(12), personne: null, par: "Karim", at: iso(t0 - 340 * 24 * 60 * MIN), actif: true, archive_at: null },
+  { id: "d4", site: "s3", type_cle: "formation_hygiene", titre: "Attestation formation hygiène", fichier: "demo/s1.webp", expire_le: null, personne: "Karim", par: "Karim", at: iso(t0 - 400 * 24 * 60 * MIN), actif: true, archive_at: null },
+];
+function classeurDemo(site: string): ClasseurSite {
+  const auj = jourDemo(0), d30 = jourDemo(30);
+  const vis = docsDemo.filter((d) => d.actif && (d.site === null || d.site === site));
+  return {
+    documents: vis.map((d) => { const t = typesDocsDemo.find((x) => x.cle === d.type_cle)!; return { id: d.id, groupe: d.site === null, type_cle: d.type_cle, type: t.libelle, rubrique: t.rubrique,
+      titre: d.titre, fichier: d.fichier, expire_le: d.expire_le, personne: d.personne, par: d.par, at: d.at,
+      etat: !d.expire_le ? "a_jour" as const : d.expire_le < auj ? "retard" as const : d.expire_le <= d30 ? "bientot" as const : "a_jour" as const }; }),
+    attendus: typesDocsDemo.filter((t) => t.obligatoire).map((t) => ({ cle: t.cle, libelle: t.libelle, rubrique: t.rubrique, niveau: t.niveau,
+      present: vis.some((d) => d.type_cle === t.cle && (!d.expire_le || d.expire_le >= auj)) })),
+  };
+}
+function deposerDocDemo(site: string | null, d: DocumentSaisie, fichier: string, par: string) {
+  if (docsDemo.some((x) => x.id === d.id)) return;
+  if (d.remplace) { const a = docsDemo.find((x) => x.id === d.remplace); if (a) Object.assign(a, { actif: false, archive_at: iso(Date.now()) }); }
+  docsDemo.push({ id: d.id, site, type_cle: d.type_cle, titre: d.titre, fichier, expire_le: d.expire_le ?? null, personne: d.personne ?? null, par, at: iso(Date.now()), actif: true, archive_at: null });
 }
 function planActionDemo(): ActionPlan[] {
   return anomalies.map((a) => ({ id: a.id, titre: a.titre, categorie: a.categorie, gravite: a.gravite, statut: a.statut, source: a.source ?? "manuel", cree_at: a.cree_at,
@@ -272,6 +304,15 @@ export const demoApi: Api = {
     if (nom.trim().length < 2) throw new Error("Nom obligatoire");
     appareilsDemo.push({ id: `am${appareilsDemo.length + 1}`, nom: nom.trim(), type, numero: numero.trim() || null, hors_service: false, dernier: null });
   },
+  typesDocuments: () => attendre(typesDocsDemo.map((x) => ({ ...x }))),
+  documentsSite: (site) => attendre(classeurDemo(site === "s1" ? "s3" : site ?? "__groupe__")),
+  documentsArchives: (site) => attendre(docsDemo.filter((d) => !d.actif && (d.site === null || d.site === (site === "s1" ? "s3" : site ?? "__groupe__"))).map((d) => ({
+    id: d.id, groupe: d.site === null, type: typesDocsDemo.find((t) => t.cle === d.type_cle)!.libelle, titre: d.titre, fichier: d.fichier, expire_le: d.expire_le,
+    personne: d.personne, at: d.at, archive_at: d.archive_at! }))),
+  documentsGroupe: () => attendre(SITES_DEMO.map((_, k) => { const c = classeurDemo(`s${k}`);
+    return { site_id: `s${k}`, manquants: c.attendus.filter((a) => !a.present).length, expires: c.documents.filter((d) => d.etat === "retard").length, bientot: c.documents.filter((d) => d.etat === "bientot").length }; })),
+  siegeEnregistrerDocument: async (site, d) => deposerDocDemo(site, d, "demo/s2.webp", "Siège"),
+  siegeArchiverDocument: async (id) => { const a = docsDemo.find((x) => x.id === id); if (a) Object.assign(a, { actif: false, archive_at: iso(Date.now()) }); },
   etatVisites: () => attendre(etatVisitesDemo()),
   siegeEnregistrerVisite: async (_site, v, rapport) => ajouterVisiteDemo(v, rapport ? "demo/s2.webp" : null, "Siège"),
   siegeAjouterAnalyses: async (id, l, rapport) => ajouterAnalysesDemo(id, l, rapport ? "demo/s2.webp" : null),
@@ -537,6 +578,15 @@ export const demoApi: Api = {
         const p = produitsDemo.find((x) => x.id === op.produit_id);
         if (p && nouveau(op.id)) p.inv.push({ site_id: "s3", reste: op.reste, quantite: op.quantite ?? null, dlc: op.dlc ?? null, photo: op.photo ?? null,
           decision: op.decision ?? null, transfert_vers: op.transfert_vers ?? null, par: op.par_nom ?? "", at: op.at_client });
+        break;
+      }
+      case "document_pms":
+        deposerDocDemo("s3", op.document, op.fichier, op.par_nom);
+        break;
+      case "document_archive": {
+        const a = docsDemo.find((x) => x.id === op.document_id);
+        if (a && a.site === null) throw new ErreurDefinitive("Document du groupe : réservé au siège");
+        if (a) Object.assign(a, { actif: false, archive_at: iso(Date.now()) });
         break;
       }
       case "visite":

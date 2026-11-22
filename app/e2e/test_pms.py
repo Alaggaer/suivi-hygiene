@@ -181,3 +181,55 @@ def test_siege_visite_officielle_avec_rapport(page):
     page.click("[aria-label='Nouvelle visite'] button.bigbtn")
     page.wait_for_selector(".pill.ok:has-text('Visite enregistrée')")
     page.wait_for_selector(".vi-carte:has-text('Visite officielle (DDPP)'):has-text('À améliorer'):has-text('rapport')")
+
+def test_classeur_tablette(page):
+    ouvrir_pms(page)
+    page.wait_for_selector(".act:has-text('Documents du PMS') .badge")
+    page.click(".act:has-text('Documents du PMS')")
+    attendus = page.locator(".cl-attendus")
+    assert "manquant" in attendus.inner_text() and "Plan de positionnement des appâts" in attendus.inner_text()
+    assert "fourni par le siège" in attendus.inner_text()   # procédures du groupe pas encore déposées
+    doc_groupe = page.locator(".cl-doc:has-text('Plan HACCP groupe 2026')")
+    assert "groupe" in doc_groupe.inner_text() and doc_groupe.locator("button:has-text('Remplacer')").count() == 0
+    contrat = page.locator(".cl-doc:has-text('Contrat Rentokil')")
+    assert "expire bientôt" in contrat.inner_text()
+    # Remplacer le contrat 3D : l'ancien est archivé
+    contrat.locator("button:has-text('Remplacer')").click()
+    bouton = page.locator("[aria-label=Document] button.bigbtn")
+    page.fill("input[aria-label='Titre du document']", "Contrat Rentokil 2027")
+    assert bouton.inner_text() == "Date de fin de validité"
+    page.fill("input[aria-label='Fin de validité']", "2027-12-31")
+    assert bouton.inner_text() == "Joignez le document"
+    photographier(page)
+    bouton.click()
+    page.wait_for_selector(".cl-doc:has-text('Contrat Rentokil 2027'):has-text('valide')")
+    assert page.locator(".cl-doc:text-is('Contrat Rentokil')").count() == 0
+    # Ajouter le plan des appâts (PDF)
+    page.click("text=+ Ajouter un document")
+    page.select_option("select[aria-label='Type de document']", label="Plan de positionnement des appâts")
+    assert page.locator("input[aria-label='Titre du document']").input_value() == "Plan de positionnement des appâts"
+    page.set_input_files("input[aria-label='Fichier du document']", files=[{"name": "plan.pdf", "mimeType": "application/pdf", "buffer": b"%PDF-1.4"}])
+    page.click("[aria-label=Document] button.bigbtn")
+    page.wait_for_selector(".cl-doc:has-text('Plan de positionnement des appâts')")
+    assert "Plan de positionnement des appâts" not in page.locator(".cl-attendus").inner_text()
+    page.wait_for_timeout(3000)
+    page.click("text=Voir les anciennes versions")
+    page.wait_for_selector("table.tbl:has-text('Contrat Rentokil')")
+
+def test_classeur_siege(page):
+    page.goto("http://localhost:4173/#siege")
+    page.wait_for_selector(".s3-carte")
+    page.click("button.s3-retour:text-is('PMS')")
+    page.wait_for_selector(".pms-groupe")
+    assert "manquant" in page.locator(".pms-groupe tr:has-text('DALLAS')").inner_text()
+    page.click("button[role=tab]:has-text('Documents du groupe')")
+    page.wait_for_selector(".cl-doc:has-text('Plan HACCP groupe 2026')")
+    page.click("text=+ Ajouter un document")
+    page.select_option("select[aria-label='Type de document']", label="Procédures et bonnes pratiques d'hygiène")
+    page.set_input_files("input[aria-label='Fichier du document']", files=[{"name": "proc.pdf", "mimeType": "application/pdf", "buffer": b"%PDF-1.4"}])
+    page.click("[aria-label=Document] button.bigbtn")
+    page.wait_for_selector(".cl-doc:has-text(\"Procédures et bonnes pratiques d'hygiène\")")
+    eur = page.locator(".cl-doc:has-text('Contrat Eurofins 2026')")
+    eur.locator("text=Retirer").click()
+    eur.locator("text=Confirmer le retrait").click()
+    page.wait_for_selector(".cl-doc:has-text('Contrat Eurofins 2026')", state="detached")

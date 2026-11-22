@@ -546,6 +546,34 @@ do $$ declare m uuid; c uuid; an uuid; ap uuid; j jsonb; v_auj date := (now() at
   exception when invalid_parameter_value then null; end;
   perform enregistrer_visite(jsonb_build_object('id', '00000000-0000-0000-0000-0000000000e2', 'site_id', '00000000-0000-0000-0000-000000000001', 'type', 'eurofins', 'date_visite', v_auj - 5, 'note', 91));
   assert etat_visites('00000000-0000-0000-0000-000000000001')->>'etat_eurofins' = 'a_jour', 'nouvelle visite : à jour';
+  -- documents : groupe (siège) + restaurant, remplacement archivé, liste des attendus, expiration
+  perform enregistrer_document(jsonb_build_object('id', '00000000-0000-0000-0000-00000000d001', 'site_id', null, 'type_cle', 'plan_haccp',
+    'titre', 'Plan HACCP groupe 2026', 'fichier', 'documents/haccp.pdf'));
+  perform enregistrer_document(jsonb_build_object('id', '00000000-0000-0000-0000-00000000d002', 'site_id', '00000000-0000-0000-0000-000000000001', 'type_cle', 'contrat_3d',
+    'titre', 'Contrat Rentokil', 'fichier', 'documents/3d.pdf', 'expire_le', v_auj + 10));
+  perform enregistrer_document(jsonb_build_object('id', '00000000-0000-0000-0000-00000000d002', 'site_id', '00000000-0000-0000-0000-000000000001', 'type_cle', 'contrat_3d',
+    'titre', 'doublon', 'fichier', 'documents/3d.pdf'));
+  assert (select count(*) from documents_pms) = 2, 'renvoi sans doublon';
+  j := documents_site('00000000-0000-0000-0000-000000000001');
+  assert jsonb_array_length(j->'documents') = 2, 'DALLAS voit le document du groupe et le sien';
+  assert (select x->>'etat' from jsonb_array_elements(j->'documents') x where x->>'type_cle' = 'contrat_3d') = 'bientot', 'expire dans 10 jours : bientôt';
+  assert (select (x->>'present')::boolean from jsonb_array_elements(j->'attendus') x where x->>'cle' = 'plan_haccp'), 'plan HACCP présent (groupe)';
+  assert not (select (x->>'present')::boolean from jsonb_array_elements(j->'attendus') x where x->>'cle' = 'formation_hygiene'), 'attestation manquante';
+  assert relancer_documents() = 1 and relancer_documents() = 0, 'rappel avant expiration, une fois';
+  perform enregistrer_document(jsonb_build_object('id', '00000000-0000-0000-0000-00000000d003', 'site_id', '00000000-0000-0000-0000-000000000001', 'type_cle', 'contrat_3d',
+    'titre', 'Contrat Rentokil 2027', 'fichier', 'documents/3d-2027.pdf', 'expire_le', v_auj + 400, 'remplace', '00000000-0000-0000-0000-00000000d002'));
+  assert (select not actif and archive_at is not null from documents_pms where id = '00000000-0000-0000-0000-00000000d002'), 'ancien contrat archivé';
+  assert jsonb_array_length(documents_archives('00000000-0000-0000-0000-000000000001')) = 1, 'archives consultables';
+  begin
+    perform enregistrer_document(jsonb_build_object('id', gen_random_uuid(), 'site_id', '00000000-0000-0000-0000-000000000001', 'type_cle', 'plan_appats', 'titre', 'Plan', 'fichier', '00000000-0000-0000-0000-000000000002/x.pdf'));
+    raise exception 'ÉCHEC : fichier d''un autre restaurant accepté';
+  exception when invalid_parameter_value then null; end;
+  begin
+    perform enregistrer_document(jsonb_build_object('id', gen_random_uuid(), 'site_id', '00000000-0000-0000-0000-000000000002', 'type_cle', 'contrat_3d', 'titre', 'Mauvais',
+      'fichier', 'documents/z.pdf', 'remplace', '00000000-0000-0000-0000-00000000d003'));
+    raise exception 'ÉCHEC : remplacement d''un document d''un autre restaurant accepté';
+  exception when invalid_parameter_value then null; end;
+  assert (select (x->>'manquants')::int > 0 from jsonb_array_elements(documents_groupe()) x where x->>'site_id' = '00000000-0000-0000-0000-000000000001'), 'vue groupe : manquants';
   j := pms_groupe();
   assert (select (x->>'actions_ouvertes')::int >= 1 from jsonb_array_elements(j) x where x->>'restaurant' = 'DALLAS'), 'vue groupe';
 end $$;
@@ -578,6 +606,20 @@ do $$ declare p uuid; r record; begin
     perform planifier_action('00000000-0000-0000-0000-0000000000c8', '00000000-0000-0000-0000-0000000000a2', 'x x x', (now() at time zone 'Europe/Paris')::date + 2, null);
     raise exception 'ÉCHEC : BOSTON planifie une action de DALLAS';
   exception when no_data_found then null; end;
+  -- documents : BOSTON voit le document du groupe, pas ceux de DALLAS ; il dépose le sien, pas un document du groupe
+  assert (select count(*) from documents_pms) = 1, 'BOSTON : seul le document du groupe est visible';
+  assert jsonb_array_length(documents_site('00000000-0000-0000-0000-000000000002')->'documents') = 1, 'classeur BOSTON';
+  perform enregistrer_document(jsonb_build_object('id', gen_random_uuid(), 'type_cle', 'formation_hygiene', 'titre', 'Attestation Léa',
+    'personne', 'Léa', 'fichier', '00000000-0000-0000-0000-000000000002/att.pdf', 'profil', '00000000-0000-0000-0000-0000000000a2'));
+  assert jsonb_array_length(documents_site('00000000-0000-0000-0000-000000000002')->'documents') = 2, 'BOSTON dépose son attestation';
+  begin
+    perform archiver_document('00000000-0000-0000-0000-00000000d001', '00000000-0000-0000-0000-0000000000a2');
+    raise exception 'ÉCHEC : une tablette retire un document du groupe';
+  exception when insufficient_privilege then null; end;
+  begin
+    perform documents_site('00000000-0000-0000-0000-000000000001');
+    raise exception 'ÉCHEC : BOSTON lit le classeur de DALLAS';
+  exception when insufficient_privilege then null; end;
   -- visites : BOSTON ne voit pas celles de DALLAS ; le chef enregistre la sienne, l'équipier non
   assert (select count(*) from visites) = 0 and (select count(*) from analyses) = 0, 'visites de DALLAS invisibles';
   begin

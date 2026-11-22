@@ -99,8 +99,10 @@ export default function App({ api, file }: { api: Api; file: FileEnvoi }) {
       api.nettoyageDuJour().catch(() => {});   // gardé pour l'ouvrir hors ligne
       api.produitsEntretien().then((l) => prechargerFiches(api, l.flatMap((p) => [p.ft, p.fds]).filter((x): x is string => !!x))).catch(() => {});
       api.stocksMortsDuSite().then((s) => setStocksAFaire(s.filter((x) => x.a_faire).map((x) => x.produit_id))).catch(() => {});
+      // Documents du PMS gardés sur la tablette : lisibles pendant un contrôle même sans réseau.
+      if (site) api.documentsSite(site.id).then((c) => prechargerFiches(api, c.documents.map((d) => d.fichier))).catch(() => {});
     } catch (e) { setErreur((e as Error).message); }
-  }, [api]);
+  }, [api, site]);
 
   // Rechargement à la connexion, après chaque envoi réussi, et toutes les 2 minutes.
   useEffect(() => { if (!profil) return; recharger(); const i = setInterval(recharger, 2 * MIN); return () => clearInterval(i); }, [profil, recharger]);

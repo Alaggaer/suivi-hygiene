@@ -1,13 +1,15 @@
 import { useEffect, useState } from "react";
-import type { ActionPlan, AppareilMesure, ControleSite, EtatVisites, MethodeMesure, Profil, RubriqueControle, Visite } from "../types";
+import type { ClasseurSite, DocumentArchive, DocumentPms, TypeDocument, ActionPlan, AppareilMesure, ControleSite, EtatVisites, MethodeMesure, Profil, RubriqueControle, Visite } from "../types";
 import { EtatEurofins, FormAnalyses, FormVisite, ListeVisites } from "./Visites";
+import { Attendus, FormDocument, ListeArchives, ListeClasseur } from "./Classeur";
+import { useFiche } from "./Nettoyage";
 import { nouvelId, useContexte, useEnregistrer } from "../contexte";
 import { actionEnRetard, cheminPhoto, clotureSiege, ETAT_CONTROLE, lectureConforme, transitionPermise } from "../logique";
 import { ChampPhoto } from "../ui/Photo";
 import { useToast } from "../ui/outils";
 import { useDocument } from "./AlertesProduit";
 
-type Section = "actions" | RubriqueControle | "sondes" | "visites";
+type Section = "actions" | RubriqueControle | "sondes" | "visites" | "documents";
 const auj = () => new Date().toLocaleDateString("sv-SE", { timeZone: "Europe/Paris" });
 const date = (d: string) => new Date(`${d.slice(0, 10)}T12:00:00`).toLocaleDateString("fr-FR", { day: "numeric", month: "short", year: "numeric" });
 const PERIODE: Record<number, string> = { 1: "chaque mois", 2: "tous les 2 mois", 3: "tous les 3 mois", 6: "tous les 6 mois", 12: "chaque année", 24: "tous les 2 ans" };
@@ -24,9 +26,10 @@ export function EspacePms({ onFini }: { onFini: () => void }) {
   const [controles, setControles] = useState<ControleSite[] | null>(null);
   const [sondes, setSondes] = useState<AppareilMesure[] | null>(null);
   const [visites, setVisites] = useState<EtatVisites | null>(null);
+  const [classeur, setClasseur] = useState<ClasseurSite | null>(null);
   const [erreur, setErreur] = useState<string | null>(null);
   const charger = () => Promise.all([api.planAction(site.id).then(setActions), api.etatControles(site.id).then(setControles), api.etatMetrologie(site.id).then(setSondes),
-    api.etatVisites(site.id).then(setVisites)])
+    api.etatVisites(site.id).then(setVisites), api.documentsSite(site.id).then(setClasseur)])
     .catch(() => setErreur("Espace PMS indisponible sans réseau. Reconnectez la tablette puis réessayez."));
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { if (profil.role !== "equipe") charger(); }, [api, site.id]);
@@ -39,6 +42,7 @@ export function EspacePms({ onFini }: { onFini: () => void }) {
   const retour = () => { setSection(null); charger(); window.setTimeout(charger, 2500); };
   if (section === "actions" && actions) return <PlanAction actions={actions} setActions={setActions} onRetour={retour} />;
   if ((section === "entretien" || section === "nuisibles") && controles) return <Controles rubrique={section} controles={controles} setControles={setControles} onRetour={retour} />;
+  if (section === "documents" && classeur) return <DocumentsTablette classeur={classeur} recharger={() => api.documentsSite(site.id).then(setClasseur)} onRetour={retour} />;
   if (section === "visites" && visites) return <VisitesTablette etat={visites} setEtat={setVisites} onRetour={retour} />;
   if (section === "sondes" && sondes) return <Sondes sondes={sondes} setSondes={setSondes} onRetour={retour} recharger={charger} />;
 
@@ -51,6 +55,8 @@ export function EspacePms({ onFini }: { onFini: () => void }) {
     { s: "entretien", titre: "Entretien technique", sous: "Condenseurs, hotte, joints, sols, siphons", alerte: aFaire("entretien") },
     { s: "nuisibles", titre: "Nuisibles (3D)", sous: "Prestataire, appâts, moustiquaires, bas de portes", alerte: aFaire("nuisibles") },
     { s: "sondes", titre: "Sondes et thermomètres", sous: "Vérification annuelle", alerte: sondes?.filter((x) => x.etat !== "a_jour" && x.etat !== "bientot").length ?? 0 },
+    { s: "documents", titre: "Documents du PMS", sous: "Plan HACCP, procédures, attestations, contrats",
+      alerte: classeur ? classeur.attendus.filter((a) => !a.present).length + classeur.documents.filter((d) => d.etat === "retard").length : 0 },
     { s: "visites", titre: "Visites et analyses", sous: "Eurofins, services officiels, analyses bactériologiques",
       alerte: visites && (visites.etat_eurofins === "retard" || visites.etat_eurofins === "jamais") ? 1 : 0 },
   ];
@@ -62,12 +68,11 @@ export function EspacePms({ onFini }: { onFini: () => void }) {
       {erreur && <p className="pill bad">{erreur}</p>}
       <section className="actions">
         {tuiles.map((t) => (
-          <button key={t.s} className="act main" onClick={() => setSection(t.s)} disabled={!actions || !controles || !sondes || !visites}>
+          <button key={t.s} className="act main" onClick={() => setSection(t.s)} disabled={!actions || !controles || !sondes || !visites || !classeur}>
             <b>{t.titre}</b><span>{t.sous}</span>{t.alerte > 0 && <span className="badge">{t.alerte}</span>}
           </button>
         ))}
       </section>
-      <p className="hint">Documents du PMS (plan HACCP, procédures, attestations) : bientôt dans cet espace.</p>
     </div>
   );
 }
@@ -417,6 +422,50 @@ function VisitesTablette({ etat, setEtat, onRetour }: { etat: EtatVisites; setEt
       <EtatEurofins e={etat} />
       <button className="bigbtn" onClick={() => setNouvelle(true)}>+ Enregistrer une visite</button>
       <ListeVisites visites={etat.visites} ouvrir={(c) => doc.ouvrir(c, c.endsWith(".pdf") ? "application/pdf" : "image/webp")} onAnalyses={setAnalysesDe} />
+    </div>
+  );
+}
+
+/* ---------- Classeur des documents ---------- */
+function DocumentsTablette({ classeur, recharger, onRetour }: { classeur: ClasseurSite; recharger: () => void; onRetour: () => void }) {
+  const { api, site } = useContexte();
+  const enregistrer = useEnregistrer();
+  const toast = useToast();
+  const fiche = useFiche(api);
+  const [types, setTypes] = useState<TypeDocument[]>([]);
+  const [form, setForm] = useState<{ remplace: DocumentPms | null } | null>(null);
+  const [archives, setArchives] = useState<DocumentArchive[] | null>(null);
+  const [local, setLocal] = useState<ClasseurSite>(classeur);
+  useEffect(() => { api.typesDocuments().then(setTypes).catch(() => {}); }, [api]);
+  useEffect(() => setLocal(classeur), [classeur]);
+  if (form) return (
+    <div className="screen">
+      <button className="back" onClick={() => setForm(null)}>← Annuler</button>
+      <FormDocument types={types} remplace={form.remplace} photo demo={api.mode === "demo"} niveau="site" onAnnuler={() => setForm(null)} onValider={async (d, b) => {
+        const chemin = b.type === "application/pdf" ? `${site.id}/${nouvelId()}.pdf` : cheminPhoto(site.id, nouvelId(), Date.now());
+        await enregistrer({ type: "document_pms", document: d, fichier: chemin }, [{ chemin, blob: b }]);
+        const t = types.find((x) => x.cle === d.type_cle)!;
+        const ajout: DocumentPms = { id: d.id, groupe: false, type_cle: d.type_cle, type: t.libelle, rubrique: t.rubrique, titre: d.titre, fichier: chemin,
+          expire_le: d.expire_le ?? null, personne: d.personne ?? null, par: null, at: new Date().toISOString(), etat: "a_jour" };
+        const docs = [...local.documents.filter((x) => x.id !== d.remplace), ajout];
+        setLocal({ documents: docs, attendus: local.attendus.map((a) => (a.cle === d.type_cle ? { ...a, present: true } : a)) });
+        setForm(null); toast("Document enregistré"); window.setTimeout(recharger, 2500);
+      }} />
+    </div>
+  );
+  return (
+    <div className="screen">
+      <button className="back" onClick={onRetour}>← Espace PMS</button>
+      <h1>Documents du PMS</h1>
+      <p className="hint">Tout ce qu'un contrôleur peut demander, au même endroit. Les documents s'ouvrent même sans réseau une fois consultés ou gardés sur la tablette.</p>
+      <fiche.Vue />
+      <Attendus c={local} />
+      <button className="bigbtn" onClick={() => setForm({ remplace: null })}>+ Ajouter un document</button>
+      <ListeClasseur docs={local.documents} ouvrir={fiche.ouvrir} peutModifier={(d) => !d.groupe} onRemplacer={(d) => setForm({ remplace: d })}
+        onRetirer={async (d) => { await enregistrer({ type: "document_archive", document_id: d.id }); setLocal({ ...local, documents: local.documents.filter((x) => x.id !== d.id) });
+          toast("Document retiré (archivé)"); window.setTimeout(recharger, 2500); }} />
+      {archives ? <><h3>Archives</h3><ListeArchives l={archives} ouvrir={fiche.ouvrir} /></>
+        : <button className="lien" onClick={() => api.documentsArchives(site.id).then(setArchives).catch(() => setArchives([]))}>Voir les anciennes versions</button>}
     </div>
   );
 }

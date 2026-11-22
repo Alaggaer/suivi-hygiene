@@ -30,6 +30,8 @@ export type Operation =
   | (Base & { type: "controle_fait"; id: string; modele_id: string; date_realisation: string; conforme: boolean; observation?: string; prestataire?: string; photo?: string })
   | (Base & { type: "verification_mesure"; id: string; appareil_id: string; methode: "glace" | "ebullition" | "certificat"; valeur?: number; conforme: boolean; photo: string })
   | (Base & { type: "action_planifiee"; anomalie_id: string; action: string; echeance: string; responsable_id: string | null })
+  | (Base & { type: "document_pms"; document: import("./types").DocumentSaisie; fichier: string })
+  | (Base & { type: "document_archive"; document_id: string })
   | (Base & { type: "visite"; visite: import("./types").VisiteSaisie; rapport?: string })
   | (Base & { type: "analyses"; visite_id: string; analyses: import("./types").AnalyseSaisie[]; rapport?: string })
   | (Base & { type: "nettoyage_fait"; id: string; tache_id: string; element_id: string; photo?: string })

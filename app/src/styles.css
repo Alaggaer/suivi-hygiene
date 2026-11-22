@@ -494,3 +494,13 @@ tr.corrigee td{background:#fbf7ec}
 .vi-form{display:flex;flex-direction:column;gap:10px}
 .vi-analyse{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:8px;border:1px solid var(--line);border-radius:10px;margin:6px 0}
 .vi-analyse .champ{flex:1 1 180px;margin-top:0;font-size:15px;padding:8px 10px}
+
+/* ---------- Classeur PMS ---------- */
+.cl-attendus{display:flex;flex-direction:column;gap:4px;margin:10px 0}
+.cl-attendus.bad{border-color:#c62828}
+.cl-attendus.ok{border-color:#2e7d32}
+.cl-manque{color:#b3261e}
+.cl-rubrique h3{margin:16px 0 6px}
+.cl-doc{display:flex;flex-direction:column;gap:4px;margin:8px 0}
+.cl-doc.retard{border-color:#c62828}
+.cl-titre{background:none;border:0;padding:0;text-align:left;font:inherit;cursor:pointer;color:inherit}
