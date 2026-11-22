@@ -43,7 +43,7 @@ jobs:
       - run: npm ci
       - name: Navigateur de test
         run: |
-          pip install -q pytest playwright
+          pip install -q pytest playwright openpyxl
           python3 -m playwright install --with-deps chromium >/dev/null
       - name: Parcours
         run: npm run test:e2e
