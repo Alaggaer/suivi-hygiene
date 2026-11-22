@@ -37,6 +37,20 @@ export function supabaseApi(url: string, cleAnon: string): Api {
     }
     return data;
   }
+  /**
+   * Dépôt d'un fichier par le siège : documents du groupe dans documents/, pièces d'un restaurant dans son propre dossier
+   * (lisibles par sa seule tablette). PDF ou image, 20 Mo au plus.
+   */
+  async function deposer(f: File, siteId: string | null): Promise<string> {
+    const type = f.type || (/\.pdf$/i.test(f.name) ? "application/pdf" : "");
+    if (type !== "application/pdf" && !type.startsWith("image/")) throw new Error("Seuls les PDF et les images sont acceptés");
+    if (f.size > 20 * 1024 * 1024) throw new Error("Fichier trop lourd (20 Mo au plus)");
+    const ext = type === "application/pdf" ? "pdf" : (type.split("/")[1] ?? "img").replace(/[^a-z0-9]/g, "") || "img";
+    const chemin = `${siteId ?? "documents"}/${siteId ? "pieces/" : ""}${crypto.randomUUID()}.${ext}`;
+    const { error } = await sb.storage.from("photos").upload(chemin, f, { contentType: type });
+    if (error) throw new Error(`Document non envoyé : ${error.message}`);
+    return chemin;
+  }
   function ok<T>(r: Reponse<T>): T {
     if (r.error) throw new Error(r.error.message);
     if (r.data === null) throw new Error("Réponse vide du serveur");
@@ -61,7 +75,7 @@ export function supabaseApi(url: string, cleAnon: string): Api {
     async profils() { return ok(await sb.rpc("profils_du_site")); },
     async verifierPin(profilId, pin) { return ok(await sb.rpc("verifier_pin", { p_profil: profilId, p_pin: pin })) as boolean; },
     async taches() {
-      const g = await sb.rpc("generer_taches");
+      const g = await sb.rpc("generer_taches_du_site");
       if (g.error) throw new Error(g.error.message);
       return ok(await sb.rpc("taches_du_jour")) as Tache[];
     },
@@ -146,7 +160,7 @@ export function supabaseApi(url: string, cleAnon: string): Api {
     async documentsArchives(siteId) { return ok(await sb.rpc("documents_archives", { p_site: siteId })) as DocumentArchive[]; },
     async documentsGroupe() { return ok(await sb.rpc("documents_groupe")) as { site_id: string; manquants: number; expires: number; bientot: number }[]; },
     async siegeEnregistrerDocument(siteId, d, fichier) {
-      const chemin = await this.siegeDeposerDocument(fichier);
+      const chemin = await deposer(fichier, siteId);
       verifier(await sb.rpc("enregistrer_document", { p: { ...d, site_id: siteId, fichier: chemin } }));
     },
     async siegeArchiverDocument(id) { verifier(await sb.rpc("archiver_document", { p_id: id, p_profil: null })); },
@@ -155,11 +169,11 @@ export function supabaseApi(url: string, cleAnon: string): Api {
       return { ...e, visites: e.visites.map((v) => ({ ...v, note: v.note === null ? null : Number(v.note) })) };
     },
     async siegeEnregistrerVisite(siteId, v, rapport) {
-      const chemin = rapport ? await this.siegeDeposerDocument(rapport) : null;
+      const chemin = rapport ? await deposer(rapport, siteId) : null;
       verifier(await sb.rpc("enregistrer_visite", { p: { ...v, site_id: siteId, rapport: chemin } }));
     },
-    async siegeAjouterAnalyses(visiteId, analyses, rapport) {
-      const chemin = rapport ? await this.siegeDeposerDocument(rapport) : null;
+    async siegeAjouterAnalyses(siteId, visiteId, analyses, rapport) {
+      const chemin = rapport ? await deposer(rapport, siteId) : null;
       verifier(await sb.rpc("ajouter_analyses", { p_visite: visiteId, p_profil: null, p_analyses: analyses, p_rapport: chemin }));
     },
     async pmsGroupe() { return ok(await sb.rpc("pms_groupe")) as PmsGroupe[]; },
@@ -171,7 +185,7 @@ export function supabaseApi(url: string, cleAnon: string): Api {
       verifier(await sb.rpc("planifier_action", { p_anomalie: anomalieId, p_profil: null, p_action: action, p_echeance: echeance, p_responsable: responsableId }));
     },
     async siegeEnregistrerControle(siteId, modeleId, date, conforme, observation, prestataire, document) {
-      const chemin = document ? await this.siegeDeposerDocument(document) : null;
+      const chemin = document ? await deposer(document, siteId) : null;
       verifier(await sb.rpc("siege_enregistrer_controle", { p_site: siteId, p_modele: modeleId, p_date: date, p_conforme: conforme,
         p_observation: observation, p_prestataire: prestataire, p_document: chemin }));
     },
@@ -182,13 +196,7 @@ export function supabaseApi(url: string, cleAnon: string): Api {
         .order("zone").order("ordre").order("heure_limite")) as ElementNettoyage[];
     },
     async nettoyageSiege(jour) { return ok(await sb.rpc("nettoyage_siege", { p_jour: jour })) as NettoyageSiege[]; },
-    async siegeDeposerDocument(f) {
-      const ext = f.type === "application/pdf" ? "pdf" : (f.name.split(".").pop() ?? "").toLowerCase().replace(/[^a-z0-9]/g, "") || "bin";
-      const chemin = `documents/${crypto.randomUUID()}.${ext}`;
-      const { error } = await sb.storage.from("photos").upload(chemin, f, { contentType: f.type || "application/pdf" });
-      if (error) throw new Error(`Document non envoyé : ${error.message}`);
-      return chemin;
-    },
+    async siegeDeposerDocument(f, siteId) { return deposer(f, siteId ?? null); },
     async alertesDuSite() { return ok(await sb.rpc("alertes_du_site")) as AlerteProduit[]; },
     async alertesSiege() { return ok(await sb.rpc("alertes_siege")) as AlerteSiege[]; },
     async siegeCreerAlerte(a) {

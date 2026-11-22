@@ -1,3 +1,4 @@
+from playwright.sync_api import expect
 from conftest import connecter, photographier
 
 def ouvrir_pms(page, nom="Karim", pin="1234"):
@@ -22,7 +23,7 @@ def test_plan_action_prevoir_corriger_clore(page):
     assert "Action pas encore prévue" in joint.inner_text()
     joint.locator("button:has-text(\"Prévoir l'action\")").click()
     valider = page.locator("#sheet button.bigbtn.ok")
-    assert valider.inner_text() == "Décrivez l'action"
+    expect(valider).to_have_text("Décrivez l'action")
     page.fill("#sheet input[placeholder^='Ex. faire changer']", "Commander un joint neuf")
     page.fill("#sheet input[type=date]", "2099-01-15")
     page.select_option("#sheet select", label="Thomas")
@@ -54,11 +55,11 @@ def test_controle_non_conforme_cree_une_action(page):
     assert "À jour" in hotte.inner_text() and "Hotte Service" not in hotte.inner_text()
     page.locator(".pa-carte:has-text('Joints des portes') button:has-text('Enregistrer un contrôle')").click()
     bouton = page.locator(".sm-form button.bigbtn")
-    assert bouton.inner_text() == "Conforme ou non ?"
+    expect(bouton).to_have_text("Conforme ou non ?")
     page.click("button:text-is('Pas conforme')")
-    assert bouton.inner_text() == "Décrivez le problème"
+    expect(bouton).to_have_text("Décrivez le problème")
     page.fill("input[placeholder^='Ex. joint de la CF']", "Joint du frigo desserts décollé")
-    assert bouton.inner_text() == "Prenez la photo"
+    expect(bouton).to_have_text("Prenez la photo")
     photographier(page)
     bouton.click()
     page.wait_for_selector("h1:has-text('Entretien technique')")
@@ -115,7 +116,7 @@ def test_siege_vue_groupe_fiche_et_modeles(page):
     presta.locator("text=Déposer un rapport").click()
     enr = page.locator("[aria-label=Rapport] button.s3-verifier")
     page.click("[aria-label=Rapport] button:text-is('Conforme')")
-    assert enr.inner_text() == "Joignez le rapport (PDF)"
+    expect(enr).to_have_text("Joignez le rapport (PDF)")
     page.set_input_files("input[aria-label='Rapport PDF']", files=[{"name": "r.pdf", "mimeType": "application/pdf", "buffer": b"%PDF-1.4"}])
     enr.click()
     page.wait_for_selector(".pill.ok:has-text('Contrôle enregistré')")
@@ -138,14 +139,14 @@ def test_visites_eurofins_ecarts_et_analyses(page):
     page.click("text=+ Enregistrer une visite")
     page.fill("[aria-label='Nouvelle visite'] label:has-text('Note') input", "120")
     bouton = page.locator("[aria-label='Nouvelle visite'] button.bigbtn")
-    assert bouton.inner_text() == "Note entre 0 et 100"
+    expect(bouton).to_have_text("Note entre 0 et 100")
     page.fill("[aria-label='Nouvelle visite'] label:has-text('Note') input", "78,5")
     page.click("[aria-label='Nouvelle visite'] button:text-is('Satisfaisant')")
     page.click("text=+ Ajouter un écart")
-    assert bouton.inner_text() == "Décrivez chaque écart (ou retirez-le)"
+    expect(bouton).to_have_text("Décrivez chaque écart (ou retirez-le)")
     page.fill("input[aria-label='Écart']", "Absence de thermomètre dans la CF négative")
     page.click("text=+ Ajouter une analyse")
-    assert bouton.inner_text() == "Précisez l'objet de chaque analyse"
+    expect(bouton).to_have_text("Précisez l'objet de chaque analyse")
     page.select_option("select[aria-label=\"Type d'analyse\"]", "produit")
     page.fill("input[aria-label='Objet analysé']", "Salade César")
     page.click(".vi-analyse button:text-is('Non satisfaisant')")
@@ -197,9 +198,9 @@ def test_classeur_tablette(page):
     contrat.locator("button:has-text('Remplacer')").click()
     bouton = page.locator("[aria-label=Document] button.bigbtn")
     page.fill("input[aria-label='Titre du document']", "Contrat Rentokil 2027")
-    assert bouton.inner_text() == "Date de fin de validité"
+    expect(bouton).to_have_text("Date de fin de validité")
     page.fill("input[aria-label='Fin de validité']", "2027-12-31")
-    assert bouton.inner_text() == "Joignez le document"
+    expect(bouton).to_have_text("Joignez le document")
     photographier(page)
     bouton.click()
     page.wait_for_selector(".cl-doc:has-text('Contrat Rentokil 2027'):has-text('valide')")
@@ -212,7 +213,6 @@ def test_classeur_tablette(page):
     page.click("[aria-label=Document] button.bigbtn")
     page.wait_for_selector(".cl-doc:has-text('Plan de positionnement des appâts')")
     assert "Plan de positionnement des appâts" not in page.locator(".cl-attendus").inner_text()
-    page.wait_for_timeout(3000)
     page.click("text=Voir les anciennes versions")
     page.wait_for_selector("table.tbl:has-text('Contrat Rentokil')")
 

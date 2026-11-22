@@ -19,6 +19,9 @@ async function envoyer(e: Email): Promise<string | null> {
 }
 
 Deno.serve(async (req) => {
+  // Seule la planification de la base peut déclencher un envoi : elle joint la clé du coffre, que la base vérifie.
+  const { data: autorise } = await sb.rpc("verifier_cle_alertes", { p_cle: req.headers.get("x-cle-alertes") });
+  if (autorise !== true) return Response.json({ erreur: "Appel non autorisé" }, { status: 401 });
   const mode = new URL(req.url).searchParams.get("mode") ?? "alertes";
   if (!CLE) return Response.json({ envoyes: 0, raison: "RESEND_API_KEY non configurée : rien n'est envoyé, les alertes restent en attente." });
 
@@ -43,6 +46,11 @@ Deno.serve(async (req) => {
   }
 
   if (mode === "resume") {
+    // Au plus un résumé par jour.
+    const jourIso = new Date().toLocaleDateString("sv-SE", { timeZone: "Europe/Paris" });
+    const { data: dejaFait } = await sb.from("reglages").select("valeur").eq("cle", "resume_envoye").maybeSingle();
+    if ((dejaFait?.valeur as { jour?: string } | null)?.jour === jourIso) return Response.json({ envoyes: 0, raison: "Résumé déjà envoyé aujourd'hui" });
+    await sb.from("reglages").upsert({ cle: "resume_envoye", valeur: { jour: jourIso } });
     const { data: resumes, error } = await sb.rpc("resume_jour");
     if (error) return Response.json({ erreur: error.message }, { status: 500 });
     const jour = new Date().toLocaleDateString("fr-FR", { timeZone: "Europe/Paris" });

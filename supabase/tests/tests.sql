@@ -486,8 +486,8 @@ do $$ declare m uuid; c uuid; an uuid; ap uuid; j jsonb; v_auj date := (now() at
   perform siege_enregistrer_controle('00000000-0000-0000-0000-000000000002', m, v_auj - 3, true, null, 'Rentokil', 'documents/rapport.pdf');
   assert (select x->'dernier'->>'prestataire' from jsonb_array_elements(etat_controles('00000000-0000-0000-0000-000000000002')) x where x->>'id' = m::text) = 'Rentokil', 'rapport du prestataire';
   begin
-    perform siege_enregistrer_controle('00000000-0000-0000-0000-000000000002', m, v_auj, true, null, null, '00000000-0000-0000-0000-000000000002/x.pdf');
-    raise exception 'ÉCHEC : document mal placé accepté';
+    perform siege_enregistrer_controle('00000000-0000-0000-0000-000000000002', m, v_auj, true, null, null, '00000000-0000-0000-0000-000000000001/x.pdf');
+    raise exception 'ÉCHEC : rapport rangé chez un autre restaurant accepté';
   exception when invalid_parameter_value then null; end;
   -- métrologie : glace fondante, tolérance 0,5 °C calculée par le serveur
   insert into appareils_mesure (id, site_id, nom) values ('00000000-0000-0000-0000-0000000000b1', '00000000-0000-0000-0000-000000000001', 'Sonde piquante 1');
@@ -789,4 +789,48 @@ do $$ declare i int; begin
   end;
 end $$;
 reset role;
+-- revue de sécurité : génération des tâches, compte siège, heure et motif imposés, origines réservées, preuves non supprimables
+insert into profils(id,site_id,nom,role,pin_hash) values ('00000000-0000-0000-0000-00000000c5e0', null, 'Siège test', 'siege', crypt('x', gen_salt('bf'))) on conflict do nothing;
+insert into anomalies(id,site_id,source,categorie,gravite,titre) values ('00000000-0000-0000-0000-00000000c5e1','00000000-0000-0000-0000-000000000002','releve','T°','critique','CF à 12 °C');
+update anomalies set statut = 'traitee' where id = '00000000-0000-0000-0000-00000000c5e1';
+update auth.claims set jwt = '{"app_metadata":{"role":"tablette","site_id":"00000000-0000-0000-0000-000000000002"}}';
+set role tablette;
+do $$ declare n int; e uuid; r uuid := gen_random_uuid(); a uuid := gen_random_uuid(); begin
+  begin
+    perform generer_taches('2020-01-01');
+    raise exception 'ÉCHEC : une tablette génère les tâches du groupe';
+  exception when insufficient_privilege then null; end;
+  n := generer_taches_du_site();
+  assert not exists (select 1 from taches where jour = '2020-01-01'), 'aucune tâche à une date choisie';
+  begin
+    perform changer_statut_anomalie('00000000-0000-0000-0000-00000000c5e1', 'verifiee', '00000000-0000-0000-0000-00000000c5e0');
+    raise exception 'ÉCHEC : une tablette clôt au nom du siège';
+  exception when insufficient_privilege then null; end;
+  select id into e from enceintes where site_id = '00000000-0000-0000-0000-000000000002' limit 1;
+  begin
+    insert into releves (id, site_id, enceinte_id, valeur, t_max, par) values (gen_random_uuid(), '00000000-0000-0000-0000-000000000002', e, 3, 4, '00000000-0000-0000-0000-00000000c5e0');
+    raise exception 'ÉCHEC : relevé signé par un compte siège depuis une tablette';
+  exception when insufficient_privilege then null; end;
+  insert into releves (id, site_id, enceinte_id, valeur, t_max, par, at, at_client, rattrapage_motif)
+  values (r, '00000000-0000-0000-0000-000000000002', e, 3, 4, '00000000-0000-0000-0000-0000000000a2', '2026-01-01', now() + interval '2 days', 'faux motif');
+  assert (select at > now() - interval '1 minute' and at_client is null and rattrapage_motif is null from releves where id = r),
+    'heure de réception serveur, heure future écartée, motif de rattrapage refusé';
+  insert into anomalies (id, site_id, source, ref_id, categorie, gravite, titre, echeance, action_prevue, cree_par)
+  values (a, '00000000-0000-0000-0000-000000000002', 'tache', gen_random_uuid(), 'x', 'mineure', 'leurre', current_date + 30, 'rien', '00000000-0000-0000-0000-0000000000a2');
+  assert (select source = 'manuel' and ref_id is null and echeance is null and action_prevue is null from anomalies where id = a),
+    'origine automatique et plan d''action refusés à la tablette';
+end $$;
+reset role;
+do $$ begin
+  begin
+    delete from visites;
+    if exists (select 1 from visites) then raise exception 'ÉCHEC : visite supprimée'; end if;
+  exception when raise_exception then
+    if sqlerrm like 'ÉCHEC%' then raise; end if;
+  end;
+  assert not has_function_privilege('anon', 'verifier_pin(uuid,text)', 'EXECUTE'), 'anon ne peut rien appeler';
+  assert has_function_privilege('authenticated', 'verifier_pin(uuid,text)', 'EXECUTE'), 'les tablettes gardent leurs fonctions';
+  assert not has_function_privilege('authenticated', 'escalader()', 'EXECUTE'), 'les fonctions internes restent fermées';
+  assert (select count(distinct pin_aleatoire()) from generate_series(1, 50)) > 30, 'PIN variés';
+end $$;
 \echo TOUS_LES_TESTS_SQL_OK

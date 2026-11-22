@@ -315,7 +315,7 @@ export const demoApi: Api = {
   siegeArchiverDocument: async (id) => { const a = docsDemo.find((x) => x.id === id); if (a) Object.assign(a, { actif: false, archive_at: iso(Date.now()) }); },
   etatVisites: () => attendre(etatVisitesDemo()),
   siegeEnregistrerVisite: async (_site, v, rapport) => ajouterVisiteDemo(v, rapport ? "demo/s2.webp" : null, "Siège"),
-  siegeAjouterAnalyses: async (id, l, rapport) => ajouterAnalysesDemo(id, l, rapport ? "demo/s2.webp" : null),
+  siegeAjouterAnalyses: async (_site, id, l, rapport) => ajouterAnalysesDemo(id, l, rapport ? "demo/s2.webp" : null),
   pmsGroupe: () => attendre(SITES_DEMO.map(([nom], k) => ({ site_id: `s${k}`, restaurant: nom,
     visites: k === 3 ? (({ visites: _v, ...e }) => e)(etatVisitesDemo())
       : { eurofins_mois: 2, derniere_eurofins: jourDemo(-20 - 9 * k), prochaine_eurofins: ajoutMois(jourDemo(-20 - 9 * k), 2),

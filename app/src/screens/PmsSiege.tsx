@@ -147,7 +147,7 @@ function FichePms({ api, siteId, nom, onRetour }: { api: Api; siteId: string; no
             }} />
           : analysesDe
             ? <FormAnalyses visite={analysesDe} photo={false} onAnnuler={() => setAnalysesDe(null)} onValider={async (l, b) => {
-                await api.siegeAjouterAnalyses(analysesDe.id, l, b as File | null); setAnalysesDe(null); setMsg({ ok: true, t: "Résultats enregistrés" }); await charger();
+                await api.siegeAjouterAnalyses(siteId, analysesDe.id, l, b as File | null); setAnalysesDe(null); setMsg({ ok: true, t: "Résultats enregistrés" }); await charger();
               }} />
             : <button className="s3-verifier" onClick={() => setNouvelleVisite(true)}>+ Enregistrer une visite</button>}
         {visites && !nouvelleVisite && !analysesDe && <ListeVisites visites={visites.visites} ouvrir={(c) => doc.ouvrir(c, c.endsWith(".pdf") ? "application/pdf" : "image/webp")} onAnalyses={setAnalysesDe} />}

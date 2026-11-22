@@ -245,7 +245,7 @@ export interface Api {
   siegeArchiverDocument(id: string): Promise<void>;
   etatVisites(siteId: string): Promise<EtatVisites>;
   siegeEnregistrerVisite(siteId: string, v: VisiteSaisie, rapport: File | null): Promise<void>;
-  siegeAjouterAnalyses(visiteId: string, analyses: AnalyseSaisie[], rapport: File | null): Promise<void>;
+  siegeAjouterAnalyses(siteId: string, visiteId: string, analyses: AnalyseSaisie[], rapport: File | null): Promise<void>;
   modelesControles(): Promise<ModeleControle[]>;
   siegePlanifierAction(anomalieId: string, action: string, echeance: string, responsableId: string | null): Promise<void>;
   siegeEnregistrerControle(siteId: string, modeleId: string, date: string, conforme: boolean, observation: string, prestataire: string, document: File | null): Promise<void>;
@@ -255,7 +255,8 @@ export interface Api {
   planNettoyage(): Promise<ElementNettoyage[]>;
   nettoyageSiege(jour: string): Promise<NettoyageSiege[]>;
   /** Dépose une FT ou une FDS (PDF) ; renvoie son chemin. */
-  siegeDeposerDocument(f: File): Promise<string>;
+  /** siteId absent : document du groupe ; sinon pièce rangée dans le dossier du restaurant. */
+  siegeDeposerDocument(f: File, siteId?: string | null): Promise<string>;
   /* Alertes produit */
   alertesDuSite(): Promise<AlerteProduit[]>;
   alertesSiege(): Promise<AlerteSiege[]>;
