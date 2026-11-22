@@ -1,8 +1,14 @@
-# Sauvegarde quotidienne de la base Suivi Hygiène, HORS de Supabase.
-# À placer dans un dépôt GitHub PRIVÉ (ex. Alaggaer/suivi-hygiene-sauvegardes) sous .github/workflows/sauvegarde.yml.
-# Secrets à créer dans ce dépôt (Settings > Secrets and variables > Actions) :
-#   SUPABASE_DB_PASSWORD mot de passe de la base Supabase (seul, sans adresse)
-#   BACKUP_PASSPHRASE    phrase secrète longue, gardée hors ligne : sans elle, une sauvegarde ne peut pas être relue
+# Sauvegarde quotidienne de Suivi Hygiène, HORS de Supabase.
+# À placer dans le dépôt GitHub PRIVÉ Alaggaer/suivi-hygiene-sauvegardes sous .github/workflows/sauvegarde.yml.
+#
+# Secrets (Settings > Secrets and variables > Actions) — jamais copiés ailleurs :
+#   BACKUP_PASSPHRASE        phrase secrète longue, gardée hors ligne : sans elle, une sauvegarde ne peut pas être relue
+#   SAUVEGARDE_DB_PASSWORD   mot de passe du compte « sauvegarde » (lecture seule). Tant qu'il est absent,
+#                            l'ancien SUPABASE_DB_PASSWORD (compte principal) est utilisé.
+#   SUPABASE_S3_KEY_ID       clé d'accès au stockage Supabase (Storage > S3) — pour copier les photos
+#   SUPABASE_S3_SECRET       secret de cette clé
+#   RCLONE_DRIVE_CONF        configuration rclone du Google Drive de destination (remote nommé « sauvegarde »)
+# Sans les trois derniers, la base est sauvegardée mais pas les photos (signalé en avertissement).
 name: Sauvegarde quotidienne
 on:
   schedule:
@@ -13,9 +19,17 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: sauvegarde
+  cancel-in-progress: false
+
+env:
+  PROJET: ldsxlovhueuzmhrzofjo
+  PG: /usr/lib/postgresql/17/bin
+
 jobs:
   sauvegarder:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     services:
       # Base vide pour vérifier que la sauvegarde se restaure vraiment (une sauvegarde jamais testée ne vaut rien).
       verif:
@@ -26,56 +40,66 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Outils PostgreSQL 17
+      - name: Outils (PostgreSQL 17, rclone)
         run: |
           sudo install -d /usr/share/postgresql-common/pgdg
           sudo curl -fsSL -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc https://www.postgresql.org/media/keys/ACCC4CF8.asc
           echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" | sudo tee /etc/apt/sources.list.d/pgdg.list
-          sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client-17
+          sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client-17 rclone
+
+      - name: Connexion à la base (compte de sauvegarde en lecture seule si disponible)
+        env:
+          MDP_SAUVEGARDE: "${{ secrets.SAUVEGARDE_DB_PASSWORD }}"
+          MDP_PRINCIPAL: "${{ secrets.SUPABASE_DB_PASSWORD }}"
+        run: |
+          if [ -n "$MDP_SAUVEGARDE" ]; then U=sauvegarde; M="$MDP_SAUVEGARDE"
+          elif [ -n "$MDP_PRINCIPAL" ]; then U=postgres; M="$MDP_PRINCIPAL"
+            echo "::warning::Compte principal utilisé : créez le secret SAUVEGARDE_DB_PASSWORD (compte en lecture seule)"
+          else echo "::error::Aucun mot de passe de base dans les secrets"; exit 1; fi
+          # Le mot de passe passe par un fichier .pgpass (jamais affiché, caractères spéciaux acceptés).
+          M=${M//\\/\\\\}; M=${M//:/\\:}   # .pgpass : « \\ » et « : » doivent être échappés
+          printf '%s\n' "aws-0-eu-west-3.pooler.supabase.com:5432:postgres:$U.$PROJET:$M" > ~/.pgpass; chmod 600 ~/.pgpass
+          { echo "PGHOST=aws-0-eu-west-3.pooler.supabase.com"; echo "PGPORT=5432"; echo "PGUSER=$U.$PROJET"
+            echo "PGDATABASE=postgres"; echo "PGSSLMODE=require"; echo "COMPTE=$U"; echo "JOUR=$(date -u +%Y-%m-%d)"; echo "MOIS=$(date -u +%Y-%m)"; } >> $GITHUB_ENV
 
       - name: Export de la base (schéma et données de l'app, comptes, index des photos)
-        env:
-          # Le mot de passe passe par PGPASSWORD : caractères spéciaux acceptés, jamais affiché dans les journaux.
-          PGPASSWORD: "${{ secrets.SUPABASE_DB_PASSWORD }}"
-          PGHOST: aws-0-eu-west-3.pooler.supabase.com
-          PGPORT: "5432"
-          PGUSER: postgres.ldsxlovhueuzmhrzofjo
-          PGDATABASE: postgres
-          PGSSLMODE: require
         run: |
-          if [ -z "$PGPASSWORD" ]; then echo "::error::Secret SUPABASE_DB_PASSWORD absent"; exit 1; fi
-          JOUR=$(date -u +%Y-%m-%d)
-          echo "JOUR=$JOUR" >> $GITHUB_ENV
+          # Nombre de lignes de chaque table juste avant l'export : la restauration devra en rendre au moins autant.
+          $PG/psql -At -v ON_ERROR_STOP=1 -f outils/comptage.sql > source.txt
           # NB : ne pas mélanger --schema et --table dans un même pg_dump (--table annule --schema).
-          # 1) Toute l'application : structure + données du schéma public
-          /usr/lib/postgresql/17/bin/pg_dump --format=custom --no-owner --no-privileges \
-            --schema=public --file="app-$JOUR.dump"
-          # 2) Comptes et index des photos : données seules (ces tables existent déjà dans tout projet Supabase)
-          /usr/lib/postgresql/17/bin/pg_dump --format=custom --no-owner --no-privileges \
-            --data-only --table=auth.users --table=storage.objects --file="comptes-photos-$JOUR.dump"
+          $PG/pg_dump --format=custom --no-owner --no-privileges --schema=public --file="app-$JOUR.dump"
+          $PG/pg_dump --format=custom --no-owner --no-privileges --data-only \
+            --table=auth.users --table=storage.objects --file="comptes-photos-$JOUR.dump"
           ls -lh *.dump
 
-      - name: Vérification de la restauration
-        env: { PGPASSWORD: verif, PGHOST: localhost, PGUSER: postgres }
+      - name: Vérification de la restauration (base vide, ligne par ligne)
+        env: { PGPASSWORD: verif, PGHOST: localhost, PGUSER: postgres, PGDATABASE: postgres, PGSSLMODE: disable }
         run: |
-          psql -q -v ON_ERROR_STOP=1 -f outils/verif-stub.sql
-          /usr/lib/postgresql/17/bin/pg_restore -d postgres --no-owner --no-privileges "app-$JOUR.dump" 2> restauration.log || true
-          psql -At -v ON_ERROR_STOP=1 -c "
-            select 'tables', count(*) from information_schema.tables where table_schema='public'
-            union all select 'restaurants', count(*) from public.sites
-            union all select 'releves', count(*) from public.releves
-            union all select 'livraisons', count(*) from public.livraisons
-            union all select 'anomalies', count(*) from public.anomalies
-            union all select 'taches', count(*) from public.taches
-            union all select 'journal', count(*) from public.journal" | tee comptes.txt
-          # Échoue si la structure n'est pas complète ou si aucun restaurant n'est revenu
-          test "$(grep '^tables|' comptes.txt | cut -d'|' -f2)" -ge 15
-          test "$(grep '^restaurants|' comptes.txt | cut -d'|' -f2)" -ge 1
+          $PG/psql -q -v ON_ERROR_STOP=1 -f outils/verif-stub.sql
+          $PG/pg_restore -d postgres --no-owner --no-privileges "app-$JOUR.dump" 2> restauration.log || true
+          # Seule erreur admise : le schéma public existe déjà dans une base neuve. Toute autre fait échouer la sauvegarde.
+          grep "error:" restauration.log | grep -v 'schema "public" already exists' > erreurs.txt || true
+          if [ -s erreurs.txt ]; then echo "::error::Restauration incomplète :"; cat erreurs.txt; exit 1; fi
+          $PG/psql -At -v ON_ERROR_STOP=1 -f outils/comptage.sql > restaure.txt
+          # Chaque table doit revenir avec au moins autant de lignes qu'avant l'export (rien n'est jamais supprimé).
+          python3 - <<'PY'
+          src = dict(l.strip().split("|") for l in open("source.txt") if "|" in l)
+          dst = dict(l.strip().split("|") for l in open("restaure.txt") if "|" in l)
+          manque = [f"{t}: {n} → {dst.get(t, 'absente')}" for t, n in src.items() if int(dst.get(t, -1)) < int(n)]
+          if manque: raise SystemExit("Tables mal restaurées : " + ", ".join(manque))
+          if len(src) < 30 or int(src.get("sites", 0)) < 1: raise SystemExit("Sauvegarde trop petite pour être complète")
+          with open("comptes.txt", "w") as f:
+              f.write(f"tables|{len(src)}\n")
+              for t in ["sites", "releves", "huiles", "livraisons", "anomalies", "taches", "nettoyages_faits", "documents_pms", "visites", "journal"]:
+                  if t in dst: f.write(f"{'restaurants' if t == 'sites' else t}|{dst[t]}\n")
+          print(f"{len(src)} tables restaurées, toutes complètes")
+          PY
           # Le fichier comptes/photos doit contenir les données des deux tables
-          /usr/lib/postgresql/17/bin/pg_restore --list "comptes-photos-$JOUR.dump" > contenu.txt
+          $PG/pg_restore --list "comptes-photos-$JOUR.dump" > contenu.txt
           grep -q "TABLE DATA auth users" contenu.txt
           grep -q "TABLE DATA storage objects" contenu.txt
-          echo "fichier comptes/photos : OK" | tee -a comptes.txt
+          echo "fichier comptes/photos|ok" >> comptes.txt
+          cat comptes.txt
 
       - name: Chiffrement
         env: { PASS: "${{ secrets.BACKUP_PASSPHRASE }}" }
@@ -86,8 +110,41 @@ jobs:
             -o "suivi-hygiene-$JOUR.tar.gpg" "suivi-hygiene-$JOUR.tar"
           # Preuve que la copie se déchiffre bien avec la phrase secrète
           gpg --batch --quiet --pinentry-mode loopback --passphrase "$PASS" --decrypt "suivi-hygiene-$JOUR.tar.gpg" | cmp - "suivi-hygiene-$JOUR.tar"
-          echo "déchiffrement : OK" | tee -a comptes.txt
+          echo "dechiffrement|ok" >> comptes.txt
           rm -f *.dump "suivi-hygiene-$JOUR.tar"
+
+      # Photos (et documents du PMS) : copiées vers Google Drive. Jamais d'effacement côté Drive :
+      # une photo supprimée ou abîmée dans Supabase reste intacte dans la copie.
+      - name: Copie des photos et de la sauvegarde vers Google Drive
+        env:
+          RCLONE_CONFIG_SUPA_TYPE: s3
+          RCLONE_CONFIG_SUPA_PROVIDER: Other
+          RCLONE_CONFIG_SUPA_ACCESS_KEY_ID: "${{ secrets.SUPABASE_S3_KEY_ID }}"
+          RCLONE_CONFIG_SUPA_SECRET_ACCESS_KEY: "${{ secrets.SUPABASE_S3_SECRET }}"
+          RCLONE_CONFIG_SUPA_ENDPOINT: https://ldsxlovhueuzmhrzofjo.storage.supabase.co/storage/v1/s3
+          RCLONE_CONFIG_SUPA_REGION: eu-west-3
+          RCLONE_CONFIG_SUPA_FORCE_PATH_STYLE: "true"
+          DRIVE_CONF: "${{ secrets.RCLONE_DRIVE_CONF }}"
+        run: |
+          if [ -z "$RCLONE_CONFIG_SUPA_ACCESS_KEY_ID" ] || [ -z "$RCLONE_CONFIG_SUPA_SECRET_ACCESS_KEY" ] || [ -z "$DRIVE_CONF" ]; then
+            echo "::warning::Copie des photos non configurée (secrets SUPABASE_S3_KEY_ID, SUPABASE_S3_SECRET, RCLONE_DRIVE_CONF)"
+            echo "photos|non configure" >> comptes.txt; exit 0
+          fi
+          printf '%s\n' "$DRIVE_CONF" > rclone.conf; chmod 600 rclone.conf
+          R="rclone --config rclone.conf --retries 5 --low-level-retries 10 --stats 0"
+          D=sauvegarde:suivi-hygiene
+          # Ajoute seulement ce qui manque ; --immutable refuse de remplacer une photo déjà copiée.
+          $R copy supa:photos "$D/photos" --immutable --transfers 4
+          # Contrôle : chaque fichier de Supabase est bien présent (même taille) dans le Drive.
+          $R check supa:photos "$D/photos" --one-way --size-only
+          N=$($R lsf -R --files-only supa:photos | wc -l)
+          echo "photos|$N copiees et verifiees" >> comptes.txt
+          # Base chiffrée : chaque jour (gardée 90 jours) et le premier de chaque mois (gardée pour toujours).
+          $R copyto "suivi-hygiene-$JOUR.tar.gpg" "$D/base/quotidien/suivi-hygiene-$JOUR.tar.gpg"
+          $R lsf "$D/base/mensuel" 2>/dev/null | grep -q "^suivi-hygiene-$MOIS" \
+            || $R copyto "suivi-hygiene-$JOUR.tar.gpg" "$D/base/mensuel/suivi-hygiene-$JOUR.tar.gpg"
+          $R delete "$D/base/quotidien" --min-age 90d
+          rm -f rclone.conf
 
       - uses: actions/upload-artifact@v4
         with:
@@ -99,22 +156,17 @@ jobs:
 
       # La base surveille ces signalements et alerte le siège si plus de 26 h sans sauvegarde réussie.
       - name: Signaler la sauvegarde réussie à la base
-        env:
-          PGPASSWORD: "${{ secrets.SUPABASE_DB_PASSWORD }}"
-          PGHOST: aws-0-eu-west-3.pooler.supabase.com
-          PGPORT: "5432"
-          PGUSER: postgres.ldsxlovhueuzmhrzofjo
-          PGDATABASE: postgres
-          PGSSLMODE: require
         run: |
-          COMPTES=$(python3 -c "import json,sys; print(json.dumps({l.split('|')[0]: l.split('|')[1].strip() for l in open('comptes.txt') if '|' in l}))")
+          COMPTES=$(python3 -c "import json; print(json.dumps({l.split('|')[0]: l.split('|')[1].strip() for l in open('comptes.txt') if '|' in l} | {'compte': '$COMPTE'}))")
           # Variable psql lue depuis l'entrée standard (pas d'interpolation avec -c) : valeur citée proprement.
-          echo "insert into public.sauvegardes (comptes) values (:'comptes'::jsonb);" | psql -q -v ON_ERROR_STOP=1 -v comptes="$COMPTES"
+          echo "insert into public.sauvegardes (comptes) values (:'comptes'::jsonb);" | $PG/psql -q -v ON_ERROR_STOP=1 -v comptes="$COMPTES"
 
-      - name: Relevé dans l'historique du dépôt
+      # Copie mensuelle supplémentaire dans ce dépôt (quelques Mo, chiffrée) : indépendante de GitHub Actions et du Drive.
+      - name: Relevé dans l'historique du dépôt (et archive du mois)
         run: |
-          mkdir -p historique
+          mkdir -p historique archives
+          if [ ! -f "archives/suivi-hygiene-$MOIS.tar.gpg" ]; then cp "suivi-hygiene-$JOUR.tar.gpg" "archives/suivi-hygiene-$MOIS.tar.gpg"; fi
           { echo "Sauvegarde du $JOUR ($(date -u +%H:%M) UTC) : réussie"; cat comptes.txt; } > historique/derniere-sauvegarde.txt
           { echo; echo "## $JOUR"; cat comptes.txt; } >> historique/journal.md
           git config user.name "sauvegarde-auto"; git config user.email "actions@users.noreply.github.com"
-          git add historique && git commit -qm "Sauvegarde du $JOUR" && git push -q
+          git add historique archives && git commit -qm "Sauvegarde du $JOUR" && git push -q
