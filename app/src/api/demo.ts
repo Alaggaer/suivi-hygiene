@@ -1,4 +1,4 @@
-import type { ActionPlan, AppareilMesure, ControleSite, ModeleControle, ElementATaire, ElementNettoyage, ProduitEntretien, TacheNettoyage, AlerteSiege, ReponseAlerte, Api, Anomalie, AnomalieSiege, Correction, DecisionStock, Employe, EnceinteGestion, FournisseurGestion, FriteuseGestion, ModeleTache, SiteGestion, Tablette, EtatStock, LivraisonJour, Rattrapage, EtatRestaurant, EtatFriteuse, Preuves, Profil, Tache } from "../types";
+import type { AnalyseSaisie, EtatVisites, Visite, VisiteSaisie, ActionPlan, AppareilMesure, ControleSite, ModeleControle, ElementATaire, ElementNettoyage, ProduitEntretien, TacheNettoyage, AlerteSiege, ReponseAlerte, Api, Anomalie, AnomalieSiege, Correction, DecisionStock, Employe, EnceinteGestion, FournisseurGestion, FriteuseGestion, ModeleTache, SiteGestion, Tablette, EtatStock, LivraisonJour, Rattrapage, EtatRestaurant, EtatFriteuse, Preuves, Profil, Tache } from "../types";
 import { ErreurDefinitive, type Operation } from "../operations";
 import { lectureConforme, transitionPermise } from "../logique";
 
@@ -89,6 +89,43 @@ function etatMetrologieDemo(): AppareilMesure[] {
     const prochaine = a.dernier ? ajoutMois(a.dernier.date, 12) : null;
     return { ...a, prochaine, etat: a.hors_service ? "hors_service" : !prochaine ? "jamais" : prochaine < auj ? "retard" : prochaine <= dans30 ? "bientot" : "a_jour" };
   });
+}
+const visitesDemo: Visite[] = [
+  { id: "vi1", type: "eurofins", date_visite: jourDemo(-75), organisme: "Eurofins", intervenant: "M. Leroy", note: 84, niveau: "satisfaisant", rapport: "demo/s2.webp",
+    commentaire: null, par: "Siège", ecarts: [{ id: "a2", titre: "Moustiquaires : moustiquaire de la réserve déchirée", gravite: "majeure", statut: "ouverte" }],
+    analyses: [
+      { id: "an1", date_prelevement: jourDemo(-75), categorie: "surface", objet: "Plan de travail poste froid", resultat: "satisfaisant", detail: null, rapport: "demo/s2.webp" },
+      { id: "an2", date_prelevement: jourDemo(-75), categorie: "produit", objet: "Coleslaw maison", resultat: "acceptable", detail: "Flore totale 2.10⁵ ufc/g", rapport: "demo/s2.webp" }] },
+  { id: "vi2", type: "officielle", date_visite: jourDemo(-200), organisme: "DDPP", intervenant: null, note: null, niveau: "satisfaisant", rapport: null,
+    commentaire: "Alim'confiance : satisfaisant", par: "Karim", ecarts: [], analyses: [] },
+];
+function etatVisitesDemo(): EtatVisites {
+  const der = visitesDemo.filter((v) => v.type === "eurofins").map((v) => v.date_visite).sort().pop() ?? null;
+  const prochaine = der ? ajoutMois(der, 2) : null;
+  return { eurofins_mois: 2, derniere_eurofins: der, prochaine_eurofins: prochaine,
+    etat_eurofins: !prochaine ? "jamais" : prochaine < jourDemo(0) ? "retard" : prochaine <= jourDemo(15) ? "bientot" : "a_jour",
+    visites: [...visitesDemo].sort((a, b) => b.date_visite.localeCompare(a.date_visite)) };
+}
+function ajouterVisiteDemo(v: VisiteSaisie, rapport: string | null, par: string) {
+  if (visitesDemo.some((x) => x.id === v.id)) return;
+  const ecarts = v.ecarts.filter((e) => e.texte.trim().length >= 3).map((e, i) => {
+    const id = `av-${v.id}-${i}`;
+    anomalies.unshift({ id, titre: e.texte.trim(), categorie: v.type === "eurofins" ? "Visite Eurofins" : "Visite officielle", gravite: e.gravite, statut: "ouverte", cree_at: iso(Date.now()), source: "visite" });
+    return { id, titre: e.texte.trim(), gravite: e.gravite, statut: "ouverte" as const };
+  });
+  visitesDemo.push({ id: v.id, type: v.type, date_visite: v.date_visite, organisme: v.organisme ?? null, intervenant: v.intervenant ?? null, note: v.note ?? null,
+    niveau: v.niveau ?? null, rapport, commentaire: v.commentaire ?? null, par, ecarts, analyses: [] });
+  ajouterAnalysesDemo(v.id, v.analyses, rapport);
+}
+function ajouterAnalysesDemo(visiteId: string, l: AnalyseSaisie[], rapport: string | null) {
+  const v = visitesDemo.find((x) => x.id === visiteId);
+  if (!v) return;
+  for (const a of l) {
+    if (v.analyses.some((x) => x.id === a.id)) continue;
+    v.analyses.push({ id: a.id, date_prelevement: a.date_prelevement ?? v.date_visite, categorie: a.categorie, objet: a.objet, resultat: a.resultat, detail: a.detail ?? null, rapport });
+    if (a.resultat === "non_satisfaisant") anomalies.unshift({ id: `aa-${a.id}`, titre: `Analyse non satisfaisante : ${a.objet}${a.detail ? ` (${a.detail})` : ""}`,
+      categorie: "Analyse bactériologique", gravite: "majeure", statut: "ouverte", cree_at: iso(Date.now()), source: "analyse" });
+  }
 }
 function planActionDemo(): ActionPlan[] {
   return anomalies.map((a) => ({ id: a.id, titre: a.titre, categorie: a.categorie, gravite: a.gravite, statut: a.statut, source: a.source ?? "manuel", cree_at: a.cree_at,
@@ -235,7 +272,15 @@ export const demoApi: Api = {
     if (nom.trim().length < 2) throw new Error("Nom obligatoire");
     appareilsDemo.push({ id: `am${appareilsDemo.length + 1}`, nom: nom.trim(), type, numero: numero.trim() || null, hors_service: false, dernier: null });
   },
+  etatVisites: () => attendre(etatVisitesDemo()),
+  siegeEnregistrerVisite: async (_site, v, rapport) => ajouterVisiteDemo(v, rapport ? "demo/s2.webp" : null, "Siège"),
+  siegeAjouterAnalyses: async (id, l, rapport) => ajouterAnalysesDemo(id, l, rapport ? "demo/s2.webp" : null),
   pmsGroupe: () => attendre(SITES_DEMO.map(([nom], k) => ({ site_id: `s${k}`, restaurant: nom,
+    visites: k === 3 ? (({ visites: _v, ...e }) => e)(etatVisitesDemo())
+      : { eurofins_mois: 2, derniere_eurofins: jourDemo(-20 - 9 * k), prochaine_eurofins: ajoutMois(jourDemo(-20 - 9 * k), 2),
+          etat_eurofins: ajoutMois(jourDemo(-20 - 9 * k), 2) < jourDemo(0) ? "retard" as const : "a_jour" as const },
+    derniere_visite: { type: "eurofins" as const, date_visite: k === 3 ? jourDemo(-75) : jourDemo(-20 - 9 * k), note: k === 3 ? 84 : 70 + (k * 7) % 28, niveau: null },
+    analyses_non_satisfaisantes: k === 6 ? 1 : 0,
     controles: k === 3 ? etatControlesDemo("s3") : etatControlesDemo(`s${k}`).map((c, i) => (k % 3 === 0 || i > 2 ? c : { ...c, etat: "a_jour" as const, prochaine: jourDemo(40) })),
     metrologie: k === 3 ? etatMetrologieDemo() : [],
     actions_ouvertes: k === 3 ? anomalies.filter((a) => a.statut !== "verifiee").length : k % 4, actions_en_retard: k === 3 ? 1 : k % 5 === 0 ? 1 : 0, actions_sans_plan: k % 2 }))),
@@ -494,6 +539,12 @@ export const demoApi: Api = {
           decision: op.decision ?? null, transfert_vers: op.transfert_vers ?? null, par: op.par_nom ?? "", at: op.at_client });
         break;
       }
+      case "visite":
+        ajouterVisiteDemo(op.visite, op.rapport ?? null, op.par_nom);
+        break;
+      case "analyses":
+        ajouterAnalysesDemo(op.visite_id, op.analyses, op.rapport ?? null);
+        break;
       case "controle_fait": {
         if (!nouveau(op.id)) break;
         controlesFaitsDemo.push({ site: "s3", modele: op.modele_id, date: op.date_realisation, conforme: op.conforme, observation: op.observation ?? null,
@@ -543,7 +594,7 @@ export const demoApi: Api = {
         const role = profils.find((p) => p.id === op.par)?.role ?? "equipe";
         if (!a) break;
         if (a.statut === op.statut) break;                       // déjà fait (envoi rejoué)
-        if (!transitionPermise(a.statut, op.statut, role, a.gravite)) throw new ErreurDefinitive("Changement de statut non autorisé");
+        if (!transitionPermise(a.statut, op.statut, role, a.gravite, a.source)) throw new ErreurDefinitive("Changement de statut non autorisé");
         a.statut = op.statut;
         if (op.preuve) a.preuve = op.preuve;
         if (op.commentaire) a.traitee_commentaire = op.commentaire;

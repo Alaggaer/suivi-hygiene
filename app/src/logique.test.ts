@@ -181,13 +181,14 @@ describe("réception de livraison", () => {
 });
 
 describe("Espace PMS", () => {
-  it("clôture : mineure par le chef ou le responsable, majeure par le siège seulement", () => {
-    expect(transitionPermise("traitee", "verifiee", "chef", "mineure")).toBe(true);
-    expect(transitionPermise("traitee", "verifiee", "responsable", "mineure")).toBe(true);
+  it("clôture (choix B) : le chef clôt le quotidien ; écart PMS majeur et action critique par le siège", () => {
+    expect(transitionPermise("traitee", "verifiee", "chef", "mineure", "controle")).toBe(true);
     expect(transitionPermise("traitee", "verifiee", "equipe", "mineure")).toBe(false);
-    expect(transitionPermise("traitee", "verifiee", "responsable", "majeure")).toBe(false);
-    expect(transitionPermise("traitee", "verifiee", "chef", "critique")).toBe(false);
-    expect(transitionPermise("traitee", "verifiee", "siege", "critique")).toBe(true);
+    expect(transitionPermise("traitee", "verifiee", "chef", "majeure", "tache")).toBe(true);
+    expect(transitionPermise("traitee", "verifiee", "responsable", "majeure", "releve")).toBe(true);
+    for (const src of ["controle", "metrologie", "visite", "analyse"]) expect(transitionPermise("traitee", "verifiee", "responsable", "majeure", src)).toBe(false);
+    expect(transitionPermise("traitee", "verifiee", "chef", "critique", "releve")).toBe(false);
+    expect(transitionPermise("traitee", "verifiee", "siege", "critique", "visite")).toBe(true);
   });
   it("sondes : tolérances glace fondante et eau bouillante", () => {
     expect(lectureConforme("glace", 0.5)).toBe(true);

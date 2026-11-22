@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import type { ActionPlan, Api, AppareilMesure, ControleSite, ModeleControle, PmsGroupe, RubriqueControle } from "../types";
+import type { ActionPlan, Api, AppareilMesure, ControleSite, EtatVisites, ModeleControle, PmsGroupe, RubriqueControle, Visite } from "../types";
+import { EtatEurofins, FormAnalyses, FormVisite, LIBELLE_VISITE, ListeVisites } from "./Visites";
 import { actionEnRetard, ETAT_CONTROLE } from "../logique";
 import { useDocument } from "./AlertesProduit";
 
@@ -37,7 +38,7 @@ function Groupe({ api, onOuvrir }: { api: Api; onOuvrir: (r: { id: string; nom: 
   const cell = (n: number, total: number) => <span className={`pill ${n ? "bad" : "ok"}`}>{n ? `${n} à faire` : total ? "à jour" : "—"}</span>;
   return (
     <section className="s3-bloc">
-      <div className="table-scroll"><table className="tbl pms-groupe"><thead><tr><th>Restaurant</th><th>Plan d'action</th><th>Entretien</th><th>Nuisibles</th><th>Sondes</th></tr></thead><tbody>
+      <div className="table-scroll"><table className="tbl pms-groupe"><thead><tr><th>Restaurant</th><th>Plan d'action</th><th>Entretien</th><th>Nuisibles</th><th>Sondes</th><th>Visites et analyses</th></tr></thead><tbody>
         {l.map((r) => {
           const ent = r.controles.filter((c) => c.rubrique === "entretien"), nui = r.controles.filter((c) => c.rubrique === "nuisibles");
           return (
@@ -48,6 +49,9 @@ function Groupe({ api, onOuvrir }: { api: Api; onOuvrir: (r: { id: string; nom: 
               <td>{cell(aFaire(ent), ent.length)}</td>
               <td>{cell(aFaire(nui), nui.length)}</td>
               <td>{r.metrologie.length ? cell(aFaire(r.metrologie), r.metrologie.length) : <span className="pill bad">aucune sonde</span>}</td>
+              <td><span className={`pill ${ETAT_CONTROLE[r.visites.etat_eurofins].classe}`}>Eurofins : {r.visites.etat_eurofins === "jamais" ? "aucune" : ETAT_CONTROLE[r.visites.etat_eurofins].libelle.toLowerCase()}</span>
+                {r.derniere_visite?.note != null && <span className="hint"> · {LIBELLE_VISITE[r.derniere_visite.type]} {r.derniere_visite.note} %</span>}
+                {r.analyses_non_satisfaisantes > 0 && <> <span className="pill bad">{r.analyses_non_satisfaisantes} analyse{r.analyses_non_satisfaisantes > 1 ? "s" : ""} non satisfaisante{r.analyses_non_satisfaisantes > 1 ? "s" : ""}</span></>}</td>
             </tr>
           );
         })}
@@ -60,11 +64,15 @@ function FichePms({ api, siteId, nom, onRetour }: { api: Api; siteId: string; no
   const [actions, setActions] = useState<ActionPlan[] | null>(null);
   const [controles, setControles] = useState<ControleSite[] | null>(null);
   const [sondes, setSondes] = useState<AppareilMesure[] | null>(null);
+  const [visites, setVisites] = useState<EtatVisites | null>(null);
+  const [nouvelleVisite, setNouvelleVisite] = useState(false);
+  const [analysesDe, setAnalysesDe] = useState<Visite | null>(null);
   const [prevoir, setPrevoir] = useState<string | null>(null);
   const [rapport, setRapport] = useState<ControleSite | null>(null);
   const [msg, setMsg] = useState<{ ok: boolean; t: string } | null>(null);
   const doc = useDocument(api);
-  const charger = () => Promise.all([api.planAction(siteId).then(setActions), api.etatControles(siteId).then(setControles), api.etatMetrologie(siteId).then(setSondes)])
+  const charger = () => Promise.all([api.planAction(siteId).then(setActions), api.etatControles(siteId).then(setControles), api.etatMetrologie(siteId).then(setSondes),
+    api.etatVisites(siteId).then(setVisites)])
     .catch((e) => setMsg({ ok: false, t: (e as Error).message }));
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { charger(); }, [siteId]);
@@ -118,6 +126,20 @@ function FichePms({ api, siteId, nom, onRetour }: { api: Api; siteId: string; no
           ))}</tbody></table></div>
         </section>
       ))}
+      <section className="s3-bloc">
+        <h2>Visites et analyses</h2>
+        {visites && <EtatEurofins e={visites} />}
+        {nouvelleVisite
+          ? <FormVisite photo={false} onAnnuler={() => setNouvelleVisite(false)} onValider={async (v, b) => {
+              await api.siegeEnregistrerVisite(siteId, v, b as File | null); setNouvelleVisite(false); setMsg({ ok: true, t: "Visite enregistrée" }); await charger();
+            }} />
+          : analysesDe
+            ? <FormAnalyses visite={analysesDe} photo={false} onAnnuler={() => setAnalysesDe(null)} onValider={async (l, b) => {
+                await api.siegeAjouterAnalyses(analysesDe.id, l, b as File | null); setAnalysesDe(null); setMsg({ ok: true, t: "Résultats enregistrés" }); await charger();
+              }} />
+            : <button className="s3-verifier" onClick={() => setNouvelleVisite(true)}>+ Enregistrer une visite</button>}
+        {visites && !nouvelleVisite && !analysesDe && <ListeVisites visites={visites.visites} ouvrir={(c) => doc.ouvrir(c, c.endsWith(".pdf") ? "application/pdf" : "image/webp")} onAnalyses={setAnalysesDe} />}
+      </section>
       <section className="s3-bloc">
         <h2>Sondes et thermomètres</h2>
         {sondes && !sondes.length && <p className="pill bad">Aucun appareil enregistré par le restaurant.</p>}

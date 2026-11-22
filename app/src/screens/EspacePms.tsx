@@ -1,12 +1,13 @@
 import { useEffect, useState } from "react";
-import type { ActionPlan, AppareilMesure, ControleSite, MethodeMesure, Profil, RubriqueControle } from "../types";
+import type { ActionPlan, AppareilMesure, ControleSite, EtatVisites, MethodeMesure, Profil, RubriqueControle, Visite } from "../types";
+import { EtatEurofins, FormAnalyses, FormVisite, ListeVisites } from "./Visites";
 import { nouvelId, useContexte, useEnregistrer } from "../contexte";
-import { actionEnRetard, cheminPhoto, ETAT_CONTROLE, lectureConforme, transitionPermise } from "../logique";
+import { actionEnRetard, cheminPhoto, clotureSiege, ETAT_CONTROLE, lectureConforme, transitionPermise } from "../logique";
 import { ChampPhoto } from "../ui/Photo";
 import { useToast } from "../ui/outils";
 import { useDocument } from "./AlertesProduit";
 
-type Section = "actions" | RubriqueControle | "sondes";
+type Section = "actions" | RubriqueControle | "sondes" | "visites";
 const auj = () => new Date().toLocaleDateString("sv-SE", { timeZone: "Europe/Paris" });
 const date = (d: string) => new Date(`${d.slice(0, 10)}T12:00:00`).toLocaleDateString("fr-FR", { day: "numeric", month: "short", year: "numeric" });
 const PERIODE: Record<number, string> = { 1: "chaque mois", 2: "tous les 2 mois", 3: "tous les 3 mois", 6: "tous les 6 mois", 12: "chaque année", 24: "tous les 2 ans" };
@@ -22,8 +23,10 @@ export function EspacePms({ onFini }: { onFini: () => void }) {
   const [actions, setActions] = useState<ActionPlan[] | null>(null);
   const [controles, setControles] = useState<ControleSite[] | null>(null);
   const [sondes, setSondes] = useState<AppareilMesure[] | null>(null);
+  const [visites, setVisites] = useState<EtatVisites | null>(null);
   const [erreur, setErreur] = useState<string | null>(null);
-  const charger = () => Promise.all([api.planAction(site.id).then(setActions), api.etatControles(site.id).then(setControles), api.etatMetrologie(site.id).then(setSondes)])
+  const charger = () => Promise.all([api.planAction(site.id).then(setActions), api.etatControles(site.id).then(setControles), api.etatMetrologie(site.id).then(setSondes),
+    api.etatVisites(site.id).then(setVisites)])
     .catch(() => setErreur("Espace PMS indisponible sans réseau. Reconnectez la tablette puis réessayez."));
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { if (profil.role !== "equipe") charger(); }, [api, site.id]);
@@ -36,6 +39,7 @@ export function EspacePms({ onFini }: { onFini: () => void }) {
   const retour = () => { setSection(null); charger(); window.setTimeout(charger, 2500); };
   if (section === "actions" && actions) return <PlanAction actions={actions} setActions={setActions} onRetour={retour} />;
   if ((section === "entretien" || section === "nuisibles") && controles) return <Controles rubrique={section} controles={controles} setControles={setControles} onRetour={retour} />;
+  if (section === "visites" && visites) return <VisitesTablette etat={visites} setEtat={setVisites} onRetour={retour} />;
   if (section === "sondes" && sondes) return <Sondes sondes={sondes} setSondes={setSondes} onRetour={retour} recharger={charger} />;
 
   const a = auj();
@@ -47,6 +51,8 @@ export function EspacePms({ onFini }: { onFini: () => void }) {
     { s: "entretien", titre: "Entretien technique", sous: "Condenseurs, hotte, joints, sols, siphons", alerte: aFaire("entretien") },
     { s: "nuisibles", titre: "Nuisibles (3D)", sous: "Prestataire, appâts, moustiquaires, bas de portes", alerte: aFaire("nuisibles") },
     { s: "sondes", titre: "Sondes et thermomètres", sous: "Vérification annuelle", alerte: sondes?.filter((x) => x.etat !== "a_jour" && x.etat !== "bientot").length ?? 0 },
+    { s: "visites", titre: "Visites et analyses", sous: "Eurofins, services officiels, analyses bactériologiques",
+      alerte: visites && (visites.etat_eurofins === "retard" || visites.etat_eurofins === "jamais") ? 1 : 0 },
   ];
   return (
     <div className="screen">
@@ -56,12 +62,12 @@ export function EspacePms({ onFini }: { onFini: () => void }) {
       {erreur && <p className="pill bad">{erreur}</p>}
       <section className="actions">
         {tuiles.map((t) => (
-          <button key={t.s} className="act main" onClick={() => setSection(t.s)} disabled={!actions || !controles || !sondes}>
+          <button key={t.s} className="act main" onClick={() => setSection(t.s)} disabled={!actions || !controles || !sondes || !visites}>
             <b>{t.titre}</b><span>{t.sous}</span>{t.alerte > 0 && <span className="badge">{t.alerte}</span>}
           </button>
         ))}
       </section>
-      <p className="hint">Visites (Eurofins, services officiels) et documents du PMS : bientôt dans cet espace.</p>
+      <p className="hint">Documents du PMS (plan HACCP, procédures, attestations) : bientôt dans cet espace.</p>
     </div>
   );
 }
@@ -85,7 +91,7 @@ function PlanAction({ actions, setActions, onRetour }: { actions: ActionPlan[]; 
     <div className="screen">
       <button className="back" onClick={onRetour}>← Espace PMS</button>
       <h1>Plan d'action</h1>
-      <p className="hint">Pour chaque écart : l'action prévue, qui s'en charge, pour quand, puis la preuve de correction. Mineure : close par le chef ou le responsable ; majeure : validée par le siège.</p>
+      <p className="hint">Pour chaque écart : l'action prévue, qui s'en charge, pour quand, puis la preuve de correction. Close par le chef ou le responsable ; une action critique ou un écart PMS majeur (contrôle, sonde, visite, analyse) est validé par le siège.</p>
       <doc.Visionneuse />
       {!liste.length && <p className="pill ok">Aucune action en cours.</p>}
       {liste.map((x) => {
@@ -104,10 +110,10 @@ function PlanAction({ actions, setActions, onRetour }: { actions: ActionPlan[]; 
             <div className="opts">
               {x.statut === "ouverte" && <button className="opt" onClick={() => setPrevoir(x)}>{x.action_prevue ? "Modifier l'action" : "Prévoir l'action"}</button>}
               {x.statut === "ouverte" && <button className="opt sel" onClick={() => setCorriger(x)}>Corrigé</button>}
-              {x.statut === "traitee" && transitionPermise("traitee", "verifiee", profil.role, x.gravite) && (
+              {x.statut === "traitee" && transitionPermise("traitee", "verifiee", profil.role, x.gravite, x.source) && (
                 <button className="opt sel" onClick={async () => { await enregistrer({ type: "anomalie_statut", anomalie_id: x.id, statut: "verifiee" }); maj(x.id, { statut: "verifiee" }); toast("Action close"); }}>Clore</button>
               )}
-              {x.statut === "traitee" && !transitionPermise("traitee", "verifiee", profil.role, x.gravite) && <span className="hint">À valider par {x.gravite === "mineure" ? "le chef" : "le siège"}</span>}
+              {x.statut === "traitee" && !transitionPermise("traitee", "verifiee", profil.role, x.gravite, x.source) && <span className="hint">À valider par {clotureSiege(x.gravite, x.source) ? "le siège" : "le chef"}</span>}
               {x.preuve && <button className="lien" onClick={() => doc.ouvrir(x.preuve!, "image/webp")}>preuve</button>}
             </div>
           </section>
@@ -354,6 +360,63 @@ function FormVerification({ a, onAnnuler, onFait }: { a: AppareilMesure; onAnnul
           onFait(!!conforme, m, m === "certificat" ? null : v);
         }}>{manque ?? "Enregistrer"}</button>
       </section>
+    </div>
+  );
+}
+
+/* ---------- Visites et analyses ---------- */
+function VisitesTablette({ etat, setEtat, onRetour }: { etat: EtatVisites; setEtat: (e: EtatVisites) => void; onRetour: () => void }) {
+  const { api, site, profil } = useContexte();
+  const enregistrer = useEnregistrer();
+  const toast = useToast();
+  const doc = useDocument(api);
+  const [nouvelle, setNouvelle] = useState(false);
+  const [analysesDe, setAnalysesDe] = useState<Visite | null>(null);
+  const piece = (b: Blob | null) => {
+    if (!b) return { chemin: undefined, photos: [] };
+    const chemin = b.type === "application/pdf" ? `${site.id}/${nouvelId()}.pdf` : cheminPhoto(site.id, nouvelId(), Date.now());
+    return { chemin, photos: [{ chemin, blob: b }] };
+  };
+  const demo = api.mode === "demo";
+  if (nouvelle) return (
+    <div className="screen">
+      <button className="back" onClick={() => setNouvelle(false)}>← Annuler</button>
+      <FormVisite photo demo={demo} onAnnuler={() => setNouvelle(false)} onValider={async (v, b) => {
+        const { chemin, photos } = piece(b);
+        await enregistrer({ type: "visite", visite: v, rapport: chemin }, photos);
+        const ajout: Visite = { id: v.id, type: v.type, date_visite: v.date_visite, organisme: v.organisme ?? null, intervenant: v.intervenant ?? null, note: v.note ?? null,
+          niveau: v.niveau ?? null, rapport: chemin ?? null, commentaire: v.commentaire ?? null, par: profil.nom,
+          ecarts: v.ecarts.map((e, i) => ({ id: `${v.id}-${i}`, titre: e.texte, gravite: e.gravite, statut: "ouverte" as const })),
+          analyses: v.analyses.map((a) => ({ ...a, date_prelevement: a.date_prelevement ?? v.date_visite, detail: a.detail ?? null, rapport: chemin ?? null })) };
+        const der = v.type === "eurofins" && (!etat.derniere_eurofins || v.date_visite > etat.derniere_eurofins) ? v.date_visite : etat.derniere_eurofins;
+        const proch = der ? (() => { const x = new Date(`${der}T12:00:00`); x.setMonth(x.getMonth() + etat.eurofins_mois); return x.toLocaleDateString("sv-SE"); })() : null;
+        setEtat({ ...etat, derniere_eurofins: der, prochaine_eurofins: proch, etat_eurofins: !proch ? "jamais" : proch < auj() ? "retard" : "a_jour",
+          visites: [ajout, ...etat.visites].sort((a, b2) => b2.date_visite.localeCompare(a.date_visite)) });
+        setNouvelle(false);
+        toast(v.ecarts.length || v.analyses.some((a) => a.resultat === "non_satisfaisant") ? "Visite enregistrée : les écarts sont dans le plan d'action" : "Visite enregistrée");
+      }} />
+    </div>
+  );
+  if (analysesDe) return (
+    <div className="screen">
+      <button className="back" onClick={() => setAnalysesDe(null)}>← Annuler</button>
+      <FormAnalyses visite={analysesDe} photo demo={demo} onAnnuler={() => setAnalysesDe(null)} onValider={async (l, b) => {
+        const { chemin, photos } = piece(b);
+        await enregistrer({ type: "analyses", visite_id: analysesDe.id, analyses: l, rapport: chemin }, photos);
+        setEtat({ ...etat, visites: etat.visites.map((v) => (v.id === analysesDe.id
+          ? { ...v, analyses: [...v.analyses, ...l.map((a) => ({ ...a, date_prelevement: a.date_prelevement ?? v.date_visite, detail: a.detail ?? null, rapport: chemin ?? null }))] } : v)) });
+        setAnalysesDe(null); toast("Résultats enregistrés");
+      }} />
+    </div>
+  );
+  return (
+    <div className="screen">
+      <button className="back" onClick={onRetour}>← Espace PMS</button>
+      <h1>Visites et analyses</h1>
+      <doc.Visionneuse />
+      <EtatEurofins e={etat} />
+      <button className="bigbtn" onClick={() => setNouvelle(true)}>+ Enregistrer une visite</button>
+      <ListeVisites visites={etat.visites} ouvrir={(c) => doc.ouvrir(c, c.endsWith(".pdf") ? "application/pdf" : "image/webp")} onAnalyses={setAnalysesDe} />
     </div>
   );
 }

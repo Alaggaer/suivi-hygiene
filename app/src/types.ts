@@ -52,8 +52,28 @@ export interface AppareilMesure {
   dernier: { date: string; methode: MethodeMesure; valeur: number | null; conforme: boolean; photo: string | null; document: string | null; par: string | null } | null;
   prochaine: string | null; etat: EtatControle;
 }
+export type TypeVisite = "eurofins" | "officielle" | "interne" | "autre";
+export type NiveauVisite = "tres_satisfaisant" | "satisfaisant" | "a_ameliorer" | "a_corriger";
+export type ResultatAnalyse = "satisfaisant" | "acceptable" | "non_satisfaisant";
+export interface AnalyseSaisie { id: string; categorie: "surface" | "produit" | "eau" | "autre"; objet: string; resultat: ResultatAnalyse; detail?: string; date_prelevement?: string }
+export interface Analyse extends Required<Omit<AnalyseSaisie, "detail">> { detail: string | null; rapport: string | null }
+export interface Visite {
+  id: string; type: TypeVisite; date_visite: string; organisme: string | null; intervenant: string | null; note: number | null;
+  niveau: NiveauVisite | null; rapport: string | null; commentaire: string | null; par: string | null;
+  ecarts: { id: string; titre: string; gravite: Gravite; statut: "ouverte" | "traitee" | "verifiee" }[]; analyses: Analyse[];
+}
+export interface EtatVisites {
+  eurofins_mois: number; derniere_eurofins: string | null; prochaine_eurofins: string | null; etat_eurofins: EtatControle; visites: Visite[];
+}
+/** Saisie d'une visite (tablette ou siège). */
+export interface VisiteSaisie {
+  id: string; type: TypeVisite; date_visite: string; organisme?: string; intervenant?: string; note?: number; niveau?: NiveauVisite;
+  commentaire?: string; ecarts: { texte: string; gravite: Gravite }[]; analyses: AnalyseSaisie[];
+}
 export interface PmsGroupe {
   site_id: string; restaurant: string; controles: ControleSite[]; metrologie: AppareilMesure[];
+  visites: Omit<EtatVisites, "visites">; derniere_visite: { type: TypeVisite; date_visite: string; note: number | null; niveau: NiveauVisite | null } | null;
+  analyses_non_satisfaisantes: number;
   actions_ouvertes: number; actions_en_retard: number; actions_sans_plan: number;
 }
 
@@ -130,7 +150,7 @@ export interface LivraisonJour {
 
 export interface Anomalie {
   id: string; titre: string; categorie: string; gravite: Gravite;
-  statut: "ouverte" | "traitee" | "verifiee"; cree_at: string;
+  statut: "ouverte" | "traitee" | "verifiee"; cree_at: string; source?: string;
   enAttente?: boolean;       // saisie sur la tablette, pas encore reçue par le serveur
 }
 
@@ -204,6 +224,9 @@ export interface Api {
   /** En ligne seulement : le chef ou le responsable ajoute une sonde ou un thermomètre. */
   ajouterAppareil(profilId: string, nom: string, type: AppareilMesure["type"], numero: string): Promise<void>;
   pmsGroupe(): Promise<PmsGroupe[]>;
+  etatVisites(siteId: string): Promise<EtatVisites>;
+  siegeEnregistrerVisite(siteId: string, v: VisiteSaisie, rapport: File | null): Promise<void>;
+  siegeAjouterAnalyses(visiteId: string, analyses: AnalyseSaisie[], rapport: File | null): Promise<void>;
   modelesControles(): Promise<ModeleControle[]>;
   siegePlanifierAction(anomalieId: string, action: string, echeance: string, responsableId: string | null): Promise<void>;
   siegeEnregistrerControle(siteId: string, modeleId: string, date: string, conforme: boolean, observation: string, prestataire: string, document: File | null): Promise<void>;

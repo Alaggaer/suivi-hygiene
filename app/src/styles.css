@@ -485,3 +485,12 @@ tr.corrigee td{background:#fbf7ec}
 .nt-zone.faite{opacity:.55;cursor:default}
 .nt-zone.faite span{color:#2e7d32}
 .col-taches{display:flex;flex-direction:column;gap:14px;min-width:0}
+
+/* ---------- Visites et analyses ---------- */
+.vi-eurofins{display:flex;flex-direction:column;gap:4px;margin:10px 0}
+.vi-eurofins.bad{border-color:#c62828}
+.vi-sous{display:block;margin-top:6px}
+.vi-ligne{margin:3px 0;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.vi-form{display:flex;flex-direction:column;gap:10px}
+.vi-analyse{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:8px;border:1px solid var(--line);border-radius:10px;margin:6px 0}
+.vi-analyse .champ{flex:1 1 180px;margin-top:0;font-size:15px;padding:8px 10px}

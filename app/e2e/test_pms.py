@@ -128,3 +128,56 @@ def test_siege_vue_groupe_fiche_et_modeles(page):
     page.click("[aria-label=Contrôle] button:has-text('Rapport ou certificat')")
     page.click("[aria-label=Contrôle] button.s3-verifier")
     page.wait_for_selector("tr:has-text('Contrôle des extincteurs'):has-text('chaque année')")
+
+def test_visites_eurofins_ecarts_et_analyses(page):
+    ouvrir_pms(page)
+    page.wait_for_selector(".act:has-text('Visites et analyses') .badge")
+    page.click(".act:has-text('Visites et analyses')")
+    assert "En retard" in page.locator(".vi-eurofins").inner_text(), "dernière Eurofins il y a 75 jours, tous les 2 mois"
+    assert page.locator(".vi-carte").count() == 2
+    page.click("text=+ Enregistrer une visite")
+    page.fill("[aria-label='Nouvelle visite'] label:has-text('Note') input", "120")
+    bouton = page.locator("[aria-label='Nouvelle visite'] button.bigbtn")
+    assert bouton.inner_text() == "Note entre 0 et 100"
+    page.fill("[aria-label='Nouvelle visite'] label:has-text('Note') input", "78,5")
+    page.click("[aria-label='Nouvelle visite'] button:text-is('Satisfaisant')")
+    page.click("text=+ Ajouter un écart")
+    assert bouton.inner_text() == "Décrivez chaque écart (ou retirez-le)"
+    page.fill("input[aria-label='Écart']", "Absence de thermomètre dans la CF négative")
+    page.click("text=+ Ajouter une analyse")
+    assert bouton.inner_text() == "Précisez l'objet de chaque analyse"
+    page.select_option("select[aria-label=\"Type d'analyse\"]", "produit")
+    page.fill("input[aria-label='Objet analysé']", "Salade César")
+    page.click(".vi-analyse button:text-is('Non satisfaisant')")
+    page.fill("input[aria-label='Détail']", "E. coli > critère")
+    bouton.click()
+    page.wait_for_selector(".vi-eurofins .pill:has-text('À jour')")
+    carte = page.locator(".vi-carte").first
+    assert "78.5 %" in carte.inner_text() and "Salade César" in carte.inner_text() and "Absence de thermomètre" in carte.inner_text()
+    # Résultats arrivés plus tard, sur l'ancienne visite
+    page.locator(".vi-carte:has-text('Coleslaw') button:has-text(\"+ Ajouter des résultats d'analyses\")").click()
+    page.fill("input[aria-label='Objet analysé']", "Eau du robinet")
+    page.select_option("select[aria-label=\"Type d'analyse\"]", "eau")
+    page.click("[aria-label=\"Résultats d'analyses\"] button.bigbtn")
+    page.wait_for_selector(".vi-carte:has-text('Coleslaw'):has-text('Eau du robinet')")
+    # Les écarts et l'analyse non satisfaisante sont dans le plan d'action
+    page.click("text=← Espace PMS")
+    page.click(".act:has-text(\"Plan d'action\")")
+    page.wait_for_selector(".pa-carte:has-text('Absence de thermomètre dans la CF négative')")
+    page.wait_for_selector(".pa-carte:has-text('Analyse non satisfaisante : Salade César (E. coli > critère)')")
+
+def test_siege_visite_officielle_avec_rapport(page):
+    page.goto("http://localhost:4173/#siege")
+    page.wait_for_selector(".s3-carte")
+    page.click("button.s3-retour:text-is('PMS')")
+    page.wait_for_selector(".pms-groupe")
+    assert "Eurofins : en retard" in page.locator(".pms-groupe tr:has-text('DALLAS')").inner_text()
+    page.locator(".pms-groupe tr:has-text('DALLAS')").click()
+    page.click("text=+ Enregistrer une visite")
+    page.click("[aria-label='Nouvelle visite'] button:has-text('Visite officielle')")
+    assert page.locator("[aria-label='Nouvelle visite'] label:has-text('Organisme') input").input_value() == "DDPP"
+    page.click("[aria-label='Nouvelle visite'] button:text-is('À améliorer')")
+    page.set_input_files("input[aria-label='Rapport (fichier)']", files=[{"name": "ddpp.pdf", "mimeType": "application/pdf", "buffer": b"%PDF-1.4"}])
+    page.click("[aria-label='Nouvelle visite'] button.bigbtn")
+    page.wait_for_selector(".pill.ok:has-text('Visite enregistrée')")
+    page.wait_for_selector(".vi-carte:has-text('Visite officielle (DDPP)'):has-text('À améliorer'):has-text('rapport')")

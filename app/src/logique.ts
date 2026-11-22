@@ -106,10 +106,14 @@ export function minuteurConforme(type: keyof typeof REGLES_MINUTEUR, tFin: numbe
 
 /** Cycle d'une anomalie : ouverte → traitée (par tous) → vérifiée (chef, responsable ou siège). */
 export type StatutAnomalie = "ouverte" | "traitee" | "verifiee";
-/** Clôture : mineure par le chef ou le responsable du site ; majeure ou critique par le siège seulement. */
-export function transitionPermise(de: StatutAnomalie, vers: StatutAnomalie, role: "equipe" | "chef" | "responsable" | "siege", gravite: Gravite = "mineure"): boolean {
+/** Écarts du PMS dont la clôture (si majeurs) revient au siège ; les écarts du quotidien sont clos par le chef. */
+export const SOURCES_PMS = ["controle", "metrologie", "visite", "analyse"];
+export const clotureSiege = (gravite: Gravite, source?: string) => gravite === "critique" || (gravite === "majeure" && SOURCES_PMS.includes(source ?? ""));
+
+/** Clôture : par le chef ou le responsable, sauf action critique ou écart PMS majeur (siège). Comme le serveur. */
+export function transitionPermise(de: StatutAnomalie, vers: StatutAnomalie, role: "equipe" | "chef" | "responsable" | "siege", gravite: Gravite = "mineure", source?: string): boolean {
   if (de === "ouverte" && vers === "traitee") return true;
-  if (de === "traitee" && vers === "verifiee") return role === "siege" || (gravite === "mineure" && role !== "equipe");
+  if (de === "traitee" && vers === "verifiee") return role === "siege" || (role !== "equipe" && !clotureSiege(gravite, source));
   return false;
 }
 

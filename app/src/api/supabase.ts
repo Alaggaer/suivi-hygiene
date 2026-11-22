@@ -1,5 +1,5 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
-import type { ActionPlan, AppareilMesure, ControleSite, ModeleControle, PmsGroupe, ElementNettoyage, NettoyageSiege, ProduitEntretien, TacheNettoyage, AlerteProduit, AlerteSiege, Anomalie, AnomalieSiege, Api, Correction, Employe, EnceinteGestion, FournisseurGestion, FriteuseGestion, LivraisonJour, ModeleTache, SiteGestion, StockMort, StockMortSiege, Tablette, Enceinte, Friteuse, EtatRestaurant, JourHistorique, Preuves, EtatFriteuse, Fournisseur, FournisseurNC, LigneSiege, SeuilsHuile, Site, Tache } from "../types";
+import type { EtatVisites, ActionPlan, AppareilMesure, ControleSite, ModeleControle, PmsGroupe, ElementNettoyage, NettoyageSiege, ProduitEntretien, TacheNettoyage, AlerteProduit, AlerteSiege, Anomalie, AnomalieSiege, Api, Correction, Employe, EnceinteGestion, FournisseurGestion, FriteuseGestion, LivraisonJour, ModeleTache, SiteGestion, StockMort, StockMortSiege, Tablette, Enceinte, Friteuse, EtatRestaurant, JourHistorique, Preuves, EtatFriteuse, Fournisseur, FournisseurNC, LigneSiege, SeuilsHuile, Site, Tache } from "../types";
 import { ErreurDefinitive, type Operation } from "../operations";
 
 /**
@@ -141,6 +141,18 @@ export function supabaseApi(url: string, cleAnon: string): Api {
         .map((a) => ({ ...a, dernier: a.dernier && { ...a.dernier, valeur: a.dernier.valeur === null ? null : Number(a.dernier.valeur) } }));
     },
     async ajouterAppareil(profilId, nom, type, numero) { verifier(await sb.rpc("ajouter_appareil", { p_profil: profilId, p_nom: nom, p_type: type, p_numero: numero })); },
+    async etatVisites(siteId) {
+      const e = ok(await sb.rpc("etat_visites", { p_site: siteId })) as EtatVisites;
+      return { ...e, visites: e.visites.map((v) => ({ ...v, note: v.note === null ? null : Number(v.note) })) };
+    },
+    async siegeEnregistrerVisite(siteId, v, rapport) {
+      const chemin = rapport ? await this.siegeDeposerDocument(rapport) : null;
+      verifier(await sb.rpc("enregistrer_visite", { p: { ...v, site_id: siteId, rapport: chemin } }));
+    },
+    async siegeAjouterAnalyses(visiteId, analyses, rapport) {
+      const chemin = rapport ? await this.siegeDeposerDocument(rapport) : null;
+      verifier(await sb.rpc("ajouter_analyses", { p_visite: visiteId, p_profil: null, p_analyses: analyses, p_rapport: chemin }));
+    },
     async pmsGroupe() { return ok(await sb.rpc("pms_groupe")) as PmsGroupe[]; },
     async modelesControles() {
       return ok(await sb.from("controles_modeles").select("id, rubrique, titre, methode, periodicite_mois, preuve, prestataire, sites, ordre, actif")
@@ -162,7 +174,8 @@ export function supabaseApi(url: string, cleAnon: string): Api {
     },
     async nettoyageSiege(jour) { return ok(await sb.rpc("nettoyage_siege", { p_jour: jour })) as NettoyageSiege[]; },
     async siegeDeposerDocument(f) {
-      const chemin = `documents/${crypto.randomUUID()}.pdf`;
+      const ext = f.type === "application/pdf" ? "pdf" : (f.name.split(".").pop() ?? "").toLowerCase().replace(/[^a-z0-9]/g, "") || "bin";
+      const chemin = `documents/${crypto.randomUUID()}.${ext}`;
       const { error } = await sb.storage.from("photos").upload(chemin, f, { contentType: f.type || "application/pdf" });
       if (error) throw new Error(`Document non envoyé : ${error.message}`);
       return chemin;
@@ -229,11 +242,11 @@ export function supabaseApi(url: string, cleAnon: string): Api {
         action: x.action, produits_refuses: x.produits_refuses, pages: 1 + (x.photos_bl_suite?.length ?? 0), range_at: x.range_at }));
     },
     async anomaliesOuvertes() {
-      return ok(await sb.from("anomalies").select("id, titre, categorie, gravite, statut, cree_at").neq("statut", "verifiee").order("cree_at", { ascending: false })) as Anomalie[];
+      return ok(await sb.from("anomalies").select("id, titre, categorie, gravite, statut, cree_at, source").neq("statut", "verifiee").order("cree_at", { ascending: false })) as Anomalie[];
     },
 
     async televerserPhoto(chemin, blob) {
-      const { error } = await sb.storage.from("photos").upload(chemin, blob, { contentType: "image/webp", upsert: false });
+      const { error } = await sb.storage.from("photos").upload(chemin, blob, { contentType: blob.type || "image/webp", upsert: false });
       if (!error) return;
       const e = error as { message: string; statusCode?: string };
       if (e.statusCode === "409" || /exists|duplicate/i.test(e.message)) return; // déjà envoyée lors d'un essai précédent
@@ -289,6 +302,12 @@ export function supabaseApi(url: string, cleAnon: string): Api {
         case "stock_mort":
           await inserer("inventaires_stock", [{ id: op.id, ...commun, produit_id: op.produit_id, reste: op.reste, quantite: op.quantite ?? null,
             dlc: op.dlc ?? null, photo: op.photo ?? null, decision: op.decision ?? null, transfert_vers: op.transfert_vers ?? null }]);
+          break;
+        case "visite":
+          verifier(await sb.rpc("enregistrer_visite", { p: { ...op.visite, rapport: op.rapport ?? null, profil: op.par, at_client: op.at_client } }));
+          break;
+        case "analyses":
+          verifier(await sb.rpc("ajouter_analyses", { p_visite: op.visite_id, p_profil: op.par, p_analyses: op.analyses, p_rapport: op.rapport ?? null }));
           break;
         case "controle_fait":
           await inserer("controles_faits", [{ id: op.id, ...commun, modele_id: op.modele_id, date_realisation: op.date_realisation, conforme: op.conforme,

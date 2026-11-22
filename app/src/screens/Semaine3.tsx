@@ -1,7 +1,7 @@
 import { useState } from "react";
 import type { Anomalie, Gravite, Tache } from "../types";
 import { nouvelId, useContexte, useEnregistrer } from "../contexte";
-import { cheminPhoto, REGLES_MINUTEUR, transitionPermise } from "../logique";
+import { cheminPhoto, REGLES_MINUTEUR, transitionPermise, clotureSiege } from "../logique";
 import type { Minuteur } from "../minuteurs";
 import { ChampPhoto } from "../ui/Photo";
 import { duree, PaveNumerique, temp, useMaintenant, useToast } from "../ui/outils";
@@ -124,7 +124,7 @@ export function Anomalies({ anomalies, onRetour }: { anomalies: Anomalie[]; onRe
     <div className="screen">
       <button className="back" onClick={onRetour}>← Retour</button>
       <h1>Anomalies du site</h1>
-      <p className="hint">Ouverte → Traitée → Close (mineure : par le chef ; majeure ou critique : par le siège). Majeure non traitée sous 24 h, mineure sous 72 h : le siège est prévenu.</p>
+      <p className="hint">Ouverte → Traitée → Close par le chef (action critique ou écart PMS majeur : par le siège). Majeure non traitée sous 24 h, mineure sous 72 h : le siège est prévenu.</p>
       <div className="rows">
         {anomalies.length === 0 && <p className="hint">Aucune anomalie ouverte.</p>}
         {anomalies.map((a) => (
@@ -135,8 +135,8 @@ export function Anomalies({ anomalies, onRetour }: { anomalies: Anomalie[]; onRe
               <span className={`pill ${a.statut === "ouverte" ? "bad" : "warn"}`}>{a.statut === "ouverte" ? "Ouverte" : "Traitée"}</span>
               {a.enAttente && <span className="pill none">En attente d'envoi</span>}
               {transitionPermise(a.statut, "traitee", profil.role) && <button className="opt" onClick={() => { setTraiter(a); setCom(""); }}>Marquer traitée</button>}
-              {transitionPermise(a.statut, "verifiee", profil.role, a.gravite) && <button className="opt" onClick={() => changer(a, "verifiee")}>Vérifiée (clôturer)</button>}
-              {a.statut === "traitee" && !transitionPermise(a.statut, "verifiee", profil.role, a.gravite) && <span className="hint" style={{ fontSize: 14 }}>{a.gravite === "mineure" ? "À clore par le chef" : "À valider par le siège"}</span>}
+              {transitionPermise(a.statut, "verifiee", profil.role, a.gravite, a.source) && <button className="opt" onClick={() => changer(a, "verifiee")}>Vérifiée (clôturer)</button>}
+              {a.statut === "traitee" && !transitionPermise(a.statut, "verifiee", profil.role, a.gravite, a.source) && <span className="hint" style={{ fontSize: 14 }}>{clotureSiege(a.gravite, a.source) ? "À valider par le siège" : "À clore par le chef"}</span>}
             </span>
           </div>
         ))}

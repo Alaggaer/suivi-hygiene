@@ -506,6 +506,46 @@ do $$ declare m uuid; c uuid; an uuid; ap uuid; j jsonb; v_auj date := (now() at
   insert into verifications_mesure (id, site_id, appareil_id, methode, valeur, conforme, photo, par)
   values (gen_random_uuid(), '00000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-0000000000b1', 'ebullition', 99.5, false, '00000000-0000-0000-0000-000000000001/e.webp', '00000000-0000-0000-0000-0000000000a1');
   assert (select not hors_service from appareils_mesure where id = '00000000-0000-0000-0000-0000000000b1'), 'remis en service après une vérification conforme';
+  -- choix B : écart majeur du quotidien clos par le responsable ; critique toujours par le siège
+  insert into anomalies (id, site_id, source, categorie, gravite, titre) values ('00000000-0000-0000-0000-000000009e01', '00000000-0000-0000-0000-000000000001', 'tache', 'Tâche', 'majeure', 'Relevé oublié');
+  perform traiter_action('00000000-0000-0000-0000-000000009e01', '00000000-0000-0000-0000-0000000000a3', 'Fait en retard', null);
+  perform changer_statut_anomalie('00000000-0000-0000-0000-000000009e01', 'verifiee', '00000000-0000-0000-0000-0000000000a4');
+  assert (select statut from anomalies where id = '00000000-0000-0000-0000-000000009e01') = 'verifiee', 'majeure du quotidien close par le responsable';
+  insert into anomalies (id, site_id, source, categorie, gravite, titre) values ('00000000-0000-0000-0000-000000009e02', '00000000-0000-0000-0000-000000000001', 'releve', 'T°', 'critique', 'Chambre froide à 12 °C');
+  perform traiter_action('00000000-0000-0000-0000-000000009e02', '00000000-0000-0000-0000-0000000000a3', 'Produits jetés', null);
+  begin
+    perform changer_statut_anomalie('00000000-0000-0000-0000-000000009e02', 'verifiee', '00000000-0000-0000-0000-0000000000a4');
+    raise exception 'ÉCHEC : action critique close par le responsable';
+  exception when insufficient_privilege then null; end;
+  -- visites : Eurofins avec écarts et analyses ; renvoi sans doublon ; résultats ajoutés plus tard
+  perform enregistrer_visite(jsonb_build_object('id', '00000000-0000-0000-0000-0000000000e1', 'site_id', '00000000-0000-0000-0000-000000000001', 'type', 'eurofins',
+    'date_visite', v_auj - 70, 'organisme', 'Eurofins', 'note', 82.5, 'niveau', 'satisfaisant', 'rapport', 'documents/eurofins.pdf',
+    'ecarts', jsonb_build_array(jsonb_build_object('texte', 'Thermomètre de la CF négative absent', 'gravite', 'majeure'), jsonb_build_object('texte', 'x')),
+    'analyses', jsonb_build_array(jsonb_build_object('id', '00000000-0000-0000-0000-0000000000f1', 'categorie', 'surface', 'objet', 'Plan de travail froid', 'resultat', 'satisfaisant'),
+                                  jsonb_build_object('id', '00000000-0000-0000-0000-0000000000f2', 'categorie', 'produit', 'objet', 'Coleslaw', 'resultat', 'non_satisfaisant', 'detail', 'Listeria détectée'))));
+  perform enregistrer_visite(jsonb_build_object('id', '00000000-0000-0000-0000-0000000000e1', 'site_id', '00000000-0000-0000-0000-000000000001', 'type', 'eurofins', 'date_visite', v_auj - 70));
+  assert (select count(*) from visites) = 1, 'renvoi sans doublon';
+  assert (select count(*) from anomalies where source = 'visite' and ref_id = '00000000-0000-0000-0000-0000000000e1') = 1, 'un écart (le trop court est ignoré)';
+  assert (select titre from anomalies where source = 'analyse') = 'Analyse non satisfaisante : Coleslaw (Listeria détectée)', 'analyse non satisfaisante : action';
+  j := etat_visites('00000000-0000-0000-0000-000000000001');
+  assert j->>'etat_eurofins' = 'retard' and (j->>'prochaine_eurofins')::date = (v_auj - 70 + interval '2 months')::date, 'Eurofins tous les 2 mois : en retard';
+  assert jsonb_array_length(j->'visites'->0->'analyses') = 2 and jsonb_array_length(j->'visites'->0->'ecarts') = 1, 'visite détaillée';
+  assert ajouter_analyses('00000000-0000-0000-0000-0000000000e1', null, jsonb_build_array(
+    jsonb_build_object('id', '00000000-0000-0000-0000-0000000000f2', 'categorie', 'produit', 'objet', 'Coleslaw', 'resultat', 'non_satisfaisant'),
+    jsonb_build_object('id', '00000000-0000-0000-0000-0000000000f3', 'categorie', 'eau', 'objet', 'Eau du robinet cuisine', 'resultat', 'acceptable')), 'documents/analyses.pdf') = 1,
+    'résultats ajoutés plus tard, sans doublon';
+  assert (select count(*) from anomalies where source = 'analyse') = 1, 'pas de seconde action pour la même analyse';
+  assert relancer_visites() = 1 and relancer_visites() = 0, 'relance Eurofins au siège, une fois';
+  begin
+    perform enregistrer_visite(jsonb_build_object('id', gen_random_uuid(), 'site_id', '00000000-0000-0000-0000-000000000001', 'type', 'officielle', 'date_visite', v_auj + 1));
+    raise exception 'ÉCHEC : visite future acceptée';
+  exception when invalid_parameter_value then null; end;
+  begin
+    perform enregistrer_visite(jsonb_build_object('id', gen_random_uuid(), 'site_id', '00000000-0000-0000-0000-000000000001', 'type', 'officielle', 'date_visite', v_auj, 'rapport', '00000000-0000-0000-0000-000000000002/x.pdf'));
+    raise exception 'ÉCHEC : rapport d''un autre restaurant accepté';
+  exception when invalid_parameter_value then null; end;
+  perform enregistrer_visite(jsonb_build_object('id', '00000000-0000-0000-0000-0000000000e2', 'site_id', '00000000-0000-0000-0000-000000000001', 'type', 'eurofins', 'date_visite', v_auj - 5, 'note', 91));
+  assert etat_visites('00000000-0000-0000-0000-000000000001')->>'etat_eurofins' = 'a_jour', 'nouvelle visite : à jour';
   j := pms_groupe();
   assert (select (x->>'actions_ouvertes')::int >= 1 from jsonb_array_elements(j) x where x->>'restaurant' = 'DALLAS'), 'vue groupe';
 end $$;
@@ -537,6 +577,23 @@ do $$ declare p uuid; r record; begin
   begin
     perform planifier_action('00000000-0000-0000-0000-0000000000c8', '00000000-0000-0000-0000-0000000000a2', 'x x x', (now() at time zone 'Europe/Paris')::date + 2, null);
     raise exception 'ÉCHEC : BOSTON planifie une action de DALLAS';
+  exception when no_data_found then null; end;
+  -- visites : BOSTON ne voit pas celles de DALLAS ; le chef enregistre la sienne, l'équipier non
+  assert (select count(*) from visites) = 0 and (select count(*) from analyses) = 0, 'visites de DALLAS invisibles';
+  begin
+    perform etat_visites('00000000-0000-0000-0000-000000000001');
+    raise exception 'ÉCHEC : BOSTON lit les visites de DALLAS';
+  exception when insufficient_privilege then null; end;
+  begin
+    perform enregistrer_visite(jsonb_build_object('id', gen_random_uuid(), 'type', 'officielle', 'date_visite', (now() at time zone 'Europe/Paris')::date, 'profil', '00000000-0000-0000-0000-0000000000a5'));
+    raise exception 'ÉCHEC : un équipier enregistre une visite';
+  exception when insufficient_privilege then null; end;
+  perform enregistrer_visite(jsonb_build_object('id', gen_random_uuid(), 'type', 'officielle', 'date_visite', (now() at time zone 'Europe/Paris')::date,
+    'organisme', 'DDPP', 'niveau', 'satisfaisant', 'profil', '00000000-0000-0000-0000-0000000000a2', 'rapport', '00000000-0000-0000-0000-000000000002/rapport.webp'));
+  assert (select count(*) from visites) = 1, 'BOSTON enregistre sa visite officielle';
+  begin
+    perform ajouter_analyses('00000000-0000-0000-0000-0000000000e1', '00000000-0000-0000-0000-0000000000a2', '[]'::jsonb);
+    raise exception 'ÉCHEC : BOSTON complète une visite de DALLAS';
   exception when no_data_found then null; end;
   -- PMS : BOSTON ne voit pas les contrôles ni le plan d'action de DALLAS
   begin
