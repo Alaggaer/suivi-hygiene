@@ -472,3 +472,16 @@ tr.corrigee td{background:#fbf7ec}
 .pms-groupe tr.cliquable{cursor:pointer}
 .pms-groupe tr.cliquable:hover td{background:#f6f8fb}
 .pms-nom{margin:8px 0}
+
+/* Accueil : bloc nettoyage séparé, compact */
+.nt-panel{padding-top:10px}
+.nt-zones{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px}
+.nt-zone{display:flex;flex-direction:column;align-items:flex-start;gap:2px;padding:10px 12px;border-radius:12px;border:1px solid var(--line);background:#fff;font:inherit;cursor:pointer;text-align:left}
+.nt-zone b{font-size:17px}
+.nt-zone span{font-size:13px;color:var(--muted)}
+.nt-zone.retard{border-color:#c62828;background:#fdecea}
+.nt-zone.retard span{color:#b3261e;font-weight:600}
+.nt-zone.bientot{border-color:#b45309}
+.nt-zone.faite{opacity:.55;cursor:default}
+.nt-zone.faite span{color:#2e7d32}
+.col-taches{display:flex;flex-direction:column;gap:14px;min-width:0}

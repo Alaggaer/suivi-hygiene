@@ -13,9 +13,14 @@ export function Accueil({ taches, anomalies, stocksAFaire = 0, alertes = [], onT
   onTache: (t: Tache) => void; onAller: (ecran: "releves" | "huile" | "anomalies" | "stocks" | "alertes" | "produits_entretien" | "pms" | "livraison" | "produit" | "minuteur" | "signaler") => void;
 }) {
   const maintenant = useMaintenant(1000);
-  const liste = trierTaches(taches, maintenant);
-  const faites = taches.filter((t) => t.faite_at);
-  const aLheure = tachesALheure(taches);
+  // Le nettoyage a son propre bloc, pour ne pas noyer les autres tâches.
+  const nettoyage = trierTaches(taches.filter((t) => t.type === "nettoyage"), maintenant)
+    .sort((a, b) => Date.parse(a.echeance) - Date.parse(b.echeance));
+  const principales = taches.filter((t) => t.type !== "nettoyage");
+  const liste = trierTaches(principales, maintenant);
+  const faites = principales.filter((t) => t.faite_at);
+  const aLheure = tachesALheure(principales);
+  const nettoyageFait = nettoyage.filter((t) => t.faite_at).length;
 
   return (
     <div className="home">
@@ -25,8 +30,9 @@ export function Accueil({ taches, anomalies, stocksAFaire = 0, alertes = [], onT
           <span>{a.type === "retrait" ? "Vérifiez si vous en avez" : "Vérifiez et réétiquetez"} · avant {hm(a.echeance)}</span>
         </button>
       ))}
+      <div className="col-taches">
       <section className="panel">
-        <h2>À faire aujourd'hui <small>{taches.length - faites.length} restantes</small></h2>
+        <h2>À faire aujourd'hui <small>{principales.length - faites.length} restantes</small></h2>
         <div className="tasks">
           {liste.length === 0 && <p className="hint">Aucune tâche prévue aujourd'hui. Le siège paramètre les tâches de chaque restaurant.</p>}
           {liste.map((t) => {
@@ -49,8 +55,25 @@ export function Accueil({ taches, anomalies, stocksAFaire = 0, alertes = [], onT
             );
           })}
         </div>
-        <p className="kpi">Aujourd'hui : <b>{aLheure} tâche{aLheure > 1 ? "s" : ""} faite{aLheure > 1 ? "s" : ""} à l'heure</b> sur {taches.length} · indicateur suivi par le siège</p>
+        <p className="kpi">Aujourd'hui : <b>{aLheure} tâche{aLheure > 1 ? "s" : ""} faite{aLheure > 1 ? "s" : ""} à l'heure</b> sur {principales.length} · indicateur suivi par le siège</p>
       </section>
+      {nettoyage.length > 0 && (
+        <section className="panel nt-panel" aria-label="Nettoyage du jour">
+          <h2>Nettoyage du jour <small>{nettoyageFait}/{nettoyage.length} zone{nettoyage.length > 1 ? "s" : ""} faite{nettoyage.length > 1 ? "s" : ""}</small></h2>
+          <div className="nt-zones">
+            {nettoyage.map((t) => {
+              const e = etatTache(t, maintenant);
+              return (
+                <button key={t.id} className={`nt-zone ${e}`} disabled={e === "faite"} onClick={() => onTache(t)}>
+                  <b>{t.titre.replace(/^Nettoyage /, "").replace(/^./, (c) => c.toUpperCase())}</b>
+                  <span>{e === "faite" ? `fait ${hm(t.faite_at!)}` : e === "retard" ? `en retard · ${hm(t.echeance)}` : `avant ${hm(t.echeance)}`}</span>
+                </button>
+              );
+            })}
+          </div>
+        </section>
+      )}
+      </div>
       <section className="actions">
         <button className="act main" onClick={() => onAller("livraison")}><b>Livraison</b><span>Températures, BL, conformité</span></button>
         <button className="act main" onClick={() => onAller("huile")}><b>Huile</b><span>Mesure, filtrage, changement</span></button>

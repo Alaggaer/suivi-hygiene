@@ -2,7 +2,9 @@ from conftest import connecter, photographier
 
 def test_tablette_coche_les_elements_et_termine(page):
     connecter(page)
-    page.click(".task:has-text('Nettoyage cuisine')")
+    assert page.locator(".task:has-text('Nettoyage')").count() == 0, "le nettoyage n'est plus dans la liste des tâches"
+    assert "0/2 zones faites" in page.locator(".nt-panel h2").inner_text()
+    page.click(".nt-zone:has-text('Cuisine')")
     page.wait_for_selector("h1:has-text('Nettoyage cuisine')")
     assert "2 éléments sur 3 à faire" in page.locator(".screen").inner_text()
     deja = page.locator(".pn-el:has-text('Plans de travail et surfaces')")
@@ -21,7 +23,8 @@ def test_tablette_coche_les_elements_et_termine(page):
     photographier(page)
     plaque.locator("button:has-text('Valider')").click()
     page.wait_for_selector(".home")
-    page.wait_for_selector(".task.faite:has-text('Nettoyage cuisine')", timeout=5000)
+    page.wait_for_selector(".nt-zone.faite:has-text('Cuisine')", timeout=5000)
+    assert "1/2 zones faites" in page.locator(".nt-panel h2").inner_text()
 
 def test_fiches_produits_depuis_accueil(page):
     connecter(page)
