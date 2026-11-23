@@ -51,8 +51,18 @@ export class FileEnvoi {
   private async envoyer(): Promise<void> {
     await this.publier({ envoiEnCours: true });
     try {
+      // Identifiants des saisies refusées : une saisie qui en dépend (anomalie d'une livraison, rangement…)
+      // reste de côté avec elle au lieu de partir seule ou d'échouer à son tour.
+      const refusees = new Set<string>();
       for (const e of await this.stockage.lister()) {
+        if (e.statut === "bloquee") { identifiants(e.op).forEach((id) => refusees.add(id)); continue; }
         if (e.statut !== "attente") continue;
+        const parent = [...refusees].find((id) => dependDe(e.op, id));
+        if (parent) {
+          await this.stockage.maj({ ...e, statut: "bloquee", erreur: `${DEPENDANCE} : elle partira ou sera abandonnée avec elle` });
+          identifiants(e.op).forEach((id) => refusees.add(id));
+          continue;
+        }
         try {
           for (const chemin of e.photos) {
             const blob = await this.stockage.photo(chemin);
@@ -65,6 +75,7 @@ export class FileEnvoi {
           const message = err instanceof Error ? err.message : String(err);
           if (err instanceof ErreurDefinitive) {
             await this.stockage.maj({ ...e, tentatives: e.tentatives + 1, statut: "bloquee", erreur: message });
+            identifiants(e.op).forEach((id) => refusees.add(id));
             continue;
           }
           await this.stockage.maj({ ...e, tentatives: e.tentatives + 1, erreur: message });
@@ -78,15 +89,44 @@ export class FileEnvoi {
     }
   }
 
-  /** Abandonne une saisie refusée (et ses photos) : elle ne sera jamais envoyée. */
-  async abandonner(cle: number) {
-    const e = (await this.stockage.lister()).find((x) => x.cle === cle);
-    if (e && e.statut === "bloquee") { await this.stockage.retirer(cle); await this.publier(); }
+  /** Saisies mises de côté parce qu'elles dépendent de celle-ci (et, en cascade, de celles-là). */
+  private async dependantes(cle: number): Promise<Entree[]> {
+    const toutes = await this.stockage.lister();
+    const racine = toutes.find((x) => x.cle === cle);
+    if (!racine) return [];
+    const ids = new Set(identifiants(racine.op)), r: Entree[] = [];
+    for (const x of toutes) {
+      if (x.cle === cle || x.statut !== "bloquee" || !x.erreur?.startsWith(DEPENDANCE)) continue;
+      if ([...ids].some((id) => dependDe(x.op, id))) { r.push(x); identifiants(x.op).forEach((id) => ids.add(id)); }
+    }
+    return r;
   }
 
-  /** Remet une opération bloquée dans la file (après correction côté serveur, par ex.). */
+  /** Abandonne une saisie refusée (et ses photos), avec celles qui en dépendent : elles ne seront jamais envoyées. */
+  async abandonner(cle: number) {
+    const e = (await this.stockage.lister()).find((x) => x.cle === cle);
+    if (!e || e.statut !== "bloquee") return;
+    for (const d of await this.dependantes(cle)) await this.stockage.retirer(d.cle);
+    await this.stockage.retirer(cle); await this.publier();
+  }
+
+  /** Remet une opération bloquée dans la file (avec celles qui en dépendent), après correction côté serveur par ex. */
   async relancer(cle: number) {
     const e = (await this.stockage.lister()).find((x) => x.cle === cle);
-    if (e) { await this.stockage.maj({ ...e, statut: "attente", erreur: undefined }); await this.publier(); this.vider().catch(() => {}); }
+    if (!e) return;
+    for (const d of await this.dependantes(cle)) await this.stockage.maj({ ...d, statut: "attente", erreur: undefined });
+    await this.stockage.maj({ ...e, statut: "attente", erreur: undefined }); await this.publier(); this.vider().catch(() => {});
   }
+}
+
+const DEPENDANCE = "Dépend d'une saisie refusée";
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+/** Identifiants créés par une saisie (la sienne et ceux de ses lignes). */
+function identifiants(op: Operation): string[] {
+  const o = op as unknown as { id?: unknown; lignes?: { id?: unknown }[] };
+  return [o.id, ...(Array.isArray(o.lignes) ? o.lignes.map((l) => l.id) : [])].filter((x): x is string => typeof x === "string" && UUID.test(x));
+}
+/** Une saisie dépend d'une autre si elle cite un de ses identifiants (hors les siens propres). */
+function dependDe(op: Operation, id: string): boolean {
+  return !identifiants(op).includes(id) && JSON.stringify(op).includes(id);
 }

@@ -38,6 +38,13 @@ function faux(): Api & { reseau: boolean } {
 }
 
 describe("lectures hors ligne", () => {
+  it("huile hors ligne le matin : l'âge d'hier est gardé, la mesure d'hier ne compte pas pour aujourd'hui", async () => {
+    const m = memoire(), api = faux(), c = avecCache(api, m);
+    m.set("suivi-hygiene:cache:etatFriteuses", JSON.stringify({ jour: "2000-01-01", v: [{ friteuse_id: "f1", jours_utilisation: 9, aujourd_hui_at: "x", aujourd_hui_polaires: 20 }] }));
+    api.reseau = false;
+    expect(await c.etatFriteuses()).toEqual([{ friteuse_id: "f1", jours_utilisation: 9, aujourd_hui_at: null, aujourd_hui_polaires: null, aujourd_hui_non_utilisee: null }]);
+  });
+
   it("tâches du jour : la copie d'hier n'est pas resservie, et une nouvelle activation vide tout", async () => {
     const m = memoire(), api = faux(), c = avecCache(api, m);
     m.set("suivi-hygiene:cache:taches", JSON.stringify({ jour: "2000-01-01", v: [{ id: "vieille" }] }));

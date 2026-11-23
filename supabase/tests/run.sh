@@ -12,3 +12,4 @@ for f in "$ICI"/../migrations/*.sql; do
   $Q -f "$f"
 done
 $Q -f "$ICI/tests.sql"
+$Q -f "$ICI/serveur.sql"

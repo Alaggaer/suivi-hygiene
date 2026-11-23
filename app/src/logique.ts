@@ -61,10 +61,16 @@ export function etatAvecEnAttente(etat: EtatFriteuse[], ops: { type: string; at_
   for (const op of ops) {
     if (op.type !== "huile") continue;
     const jourOp = new Date(op.at_client).toLocaleDateString("sv-SE", { timeZone: "Europe/Paris" });
-    if (jourOp !== new Date().toLocaleDateString("sv-SE", { timeZone: "Europe/Paris" })) continue;   // mesure d'un autre jour, déjà comptée par le serveur à son arrivée
+    const duJour = jourOp === new Date().toLocaleDateString("sv-SE", { timeZone: "Europe/Paris" });
     for (const l of op.lignes as { friteuse_id: string; polaires: number | null; changement: boolean; non_utilisee?: boolean }[]) {
       const e = r.find((x) => x.friteuse_id === l.friteuse_id);
       if (!e) continue;
+      if (!duJour) {
+        // Mesure d'un jour précédent pas encore reçue par le serveur : elle compte dans l'âge de l'huile, pas comme mesure du jour.
+        if (l.changement) { e.jours_utilisation = 1; e.dernier_changement = op.at_client; }
+        else if (!l.non_utilisee) e.jours_utilisation++;
+        continue;
+      }
       const dejaCompte = !!e.aujourd_hui_at && !e.aujourd_hui_non_utilisee;
       if (l.changement) { e.jours_utilisation = 1; e.dernier_changement = op.at_client; }
       else if (!l.non_utilisee && !dejaCompte) e.jours_utilisation++;

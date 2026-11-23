@@ -47,6 +47,11 @@ export function avecCache(api: Api, memoire: Memoire = memoireLocale): Api {
         const lu = JSON.parse(c);
         if (!DU_JOUR.has(nom)) return lu;
         if (lu && typeof lu === "object" && "jour" in lu && lu.jour === aujourdhui()) return lu.v;
+        // Huile : l'âge de l'huile d'hier reste vrai (sinon l'app afficherait « jour 1 » et oublierait un changement obligatoire) ;
+        // seules les valeurs « mesurée aujourd'hui » sont effacées.
+        if (nom === "etatFriteuses" && lu && typeof lu === "object" && Array.isArray((lu as { v?: unknown }).v)) {
+          return (lu as { v: Record<string, unknown>[] }).v.map((f) => ({ ...f, aujourd_hui_at: null, aujourd_hui_polaires: null, aujourd_hui_non_utilisee: null }));
+        }
         throw e;   // copie d'un autre jour : on n'affiche pas de fausses informations
       }
     };

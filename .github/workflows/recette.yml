@@ -1,0 +1,68 @@
+# Recette : chaque mise à jour de la base est d'abord appliquée au projet Supabase de TEST (suivi-hygiene-recette),
+# puis les tâches planifiées y sont testées dans les vraies conditions (pg_cron, sans jeton, vrais droits Supabase).
+# La base de production ne reçoit une mise à jour qu'après une recette réussie.
+#
+# Secret requis (dépôt suivi-hygiene) : RECETTE_DB_URL = chaîne « Session pooler » du projet de test, mot de passe inclus.
+name: Recette de la base
+on:
+  push:
+    branches: [main]
+    paths: ["supabase/**", ".github/workflows/recette.yml"]
+  workflow_dispatch:
+
+concurrency:
+  group: recette
+  cancel-in-progress: false
+
+jobs:
+  recette:
+    runs-on: ubuntu-24.04
+    env:
+      PROD: ldsxlovhueuzmhrzofjo
+      RECETTE: eocuasuaowrbkijptehv
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Client PostgreSQL 17
+        run: |
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl -fsSL -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" | sudo tee /etc/apt/sources.list.d/pgdg.list
+          sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client-17
+
+      - name: Vérifier qu'on vise bien la base de TEST
+        env: { DB: "${{ secrets.RECETTE_DB_URL }}" }
+        run: |
+          if [ -z "$DB" ]; then echo "::error::Secret RECETTE_DB_URL absent"; exit 1; fi
+          case "$DB" in *"$PROD"*) echo "::error::RECETTE_DB_URL pointe vers la PRODUCTION : refusé"; exit 1;; esac
+          case "$DB" in *"$RECETTE"*) ;; *) echo "::error::RECETTE_DB_URL ne correspond pas au projet de recette"; exit 1;; esac
+
+      - name: Appliquer les mises à jour manquantes
+        env: { DB: "${{ secrets.RECETTE_DB_URL }}" }
+        run: |
+          P="/usr/lib/postgresql/17/bin/psql $DB -q -v ON_ERROR_STOP=1"
+          $P -c "create schema if not exists recette; create table if not exists recette.migrations (nom text primary key, at timestamptz default now())"
+          FAITES=$($P -At -c "select nom from recette.migrations")
+          for f in supabase/migrations/*.sql; do
+            n=$(basename "$f")
+            if grep -qx "$n" <<< "$FAITES"; then continue; fi
+            echo "→ $n"
+            # Les tâches planifiées de la recette appellent les fonctions de la recette, jamais celles de la production.
+            sed "s/$PROD/$RECETTE/g" "$f" > /tmp/m.sql
+            $P -1 -f /tmp/m.sql -c "insert into recette.migrations (nom) values ('$n')"
+          done
+
+      - name: Tâches planifiées (3 passages sans jeton, données jetables)
+        env: { DB: "${{ secrets.RECETTE_DB_URL }}" }
+        run: /usr/lib/postgresql/17/bin/psql "$DB" -v ON_ERROR_STOP=1 -f supabase/tests/serveur.sql 2>&1 | grep -v NOTICE
+        shell: bash
+
+      - name: Alertes de sécurité et de performance de Supabase
+        env: { DB: "${{ secrets.RECETTE_DB_URL }}" }
+        run: |
+          # Fonctions exécutables par un visiteur non connecté (anon) : doit rester à 0.
+          N=$(/usr/lib/postgresql/17/bin/psql "$DB" -At -c "select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+               where n.nspname = 'public' and has_function_privilege('anon', p.oid, 'execute')
+                 and not exists (select 1 from pg_depend d where d.objid = p.oid and d.deptype = 'e')")
+          echo "Fonctions ouvertes aux visiteurs non connectés : $N"
+          [ "$N" = "0" ]

@@ -50,12 +50,15 @@ Deno.serve(async (req) => {
     const jourIso = new Date().toLocaleDateString("sv-SE", { timeZone: "Europe/Paris" });
     const { data: dejaFait } = await sb.from("reglages").select("valeur").eq("cle", "resume_envoye").maybeSingle();
     if ((dejaFait?.valeur as { jour?: string } | null)?.jour === jourIso) return Response.json({ envoyes: 0, raison: "Résumé déjà envoyé aujourd'hui" });
-    await sb.from("reglages").upsert({ cle: "resume_envoye", valeur: { jour: jourIso } });
     const { data: resumes, error } = await sb.rpc("resume_jour");
     if (error) return Response.json({ erreur: error.message }, { status: 500 });
     const jour = new Date().toLocaleDateString("fr-FR", { timeZone: "Europe/Paris" });
     const emails = emailsResume(resumes ?? [], dests ?? [], LIEN, jour);
     const erreurs = (await Promise.all(emails.map(envoyer))).filter(Boolean);
+    // Marqué « envoyé » seulement si au moins un e-mail est parti : un échec complet peut être relancé le jour même.
+    if (emails.length === 0 || erreurs.length < emails.length) {
+      await sb.from("reglages").upsert({ cle: "resume_envoye", valeur: { jour: jourIso } });
+    }
     return Response.json({ envoyes: emails.length - erreurs.length, erreurs });
   }
 

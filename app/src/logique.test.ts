@@ -69,11 +69,12 @@ describe("seuils", () => {
       op([{ friteuse_id: "a", polaires: 12, changement: false }]),
       op([{ friteuse_id: "a", polaires: 13, changement: false }]),          // 2e mesure le même jour : pas de double compte
       op([{ friteuse_id: "b", polaires: 10, changement: true }]),
+      // Changement fait il y a 3 jours, encore en attente (file bloquée) : le compteur repart de là, sans compter comme mesure du jour.
+      op([{ friteuse_id: "c", polaires: 30, changement: true }], new Date(Date.now() - 3 * 86400000).toISOString()),
       op([{ friteuse_id: "c", polaires: null, changement: false, non_utilisee: true }]),
-      op([{ friteuse_id: "c", polaires: 30, changement: true }], new Date(Date.now() - 3 * 86400000).toISOString()), // autre jour : ignorée ici
       { type: "releves", at_client: "2026-11-20T10:00:00Z" },
     ]);
-    expect(r.map((e) => e.jours_utilisation)).toEqual([6, 1, 2]);
+    expect(r.map((e) => e.jours_utilisation)).toEqual([6, 1, 1]);
     expect(r[0].aujourd_hui_polaires).toBe(13);
     expect(r[2].aujourd_hui_non_utilisee).toBe(true);
     expect(base[0].jours_utilisation).toBe(5);                               // l'état serveur n'est pas modifié

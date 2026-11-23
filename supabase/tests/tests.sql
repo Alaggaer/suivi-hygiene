@@ -873,5 +873,9 @@ do $$ declare a uuid := gen_random_uuid(); b uuid := gen_random_uuid(); begin
   insert into anomalies (id, site_id, source, ref_id, categorie, gravite, titre) values (b, '00000000-0000-0000-0000-000000000001', 'visite', gen_random_uuid(), 'x', 'majeure', 'directe');
   assert (select source from anomalies where id = a) = 'visite', 'rpc : origine gardée';
   assert (select source from anomalies where id = b) = 'manuel', 'écriture directe d''une tablette : origine imposée';
+  perform set_config('request.path', '/rpc/graphql', true);
+  insert into anomalies (id, site_id, source, ref_id, categorie, gravite, titre, statut) values (gen_random_uuid(), '00000000-0000-0000-0000-000000000001', 'tache', gen_random_uuid(), 'x', 'majeure', 'via graphql', 'verifiee');
+  assert (select source from anomalies where titre = 'via graphql') = 'manuel', 'GraphQL : contrôlé comme une écriture directe';
+  assert (select statut from anomalies where titre = 'via graphql') = 'ouverte', 'GraphQL : une anomalie naît ouverte';
 end $$;
 \echo TOUS_LES_TESTS_SQL_OK

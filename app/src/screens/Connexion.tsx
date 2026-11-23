@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import type { Api, Profil } from "../types";
+import { appliquerMiseAJour } from "../miseAJour";
 
 /** Activation de la tablette (une fois, par le siège) avec le compte du site. */
 export function Activation({ api, onActivee }: { api: Api; onActivee: () => void }) {
@@ -32,6 +33,14 @@ export function Connexion({ api, onConnecte, reprise }: { api: Api; onConnecte: 
   const [erreur, setErreur] = useState<string | null>(null);
 
   useEffect(() => { api.profils().then(setProfils).catch((e) => setErreur(e.message)); }, [api]);
+  // Écran « Qui êtes-vous ? » sans saisie en cours : bon moment pour passer à la nouvelle version si elle est prête.
+  // Jamais pendant une reprise de saisie, ni pendant qu'un code est tapé.
+  useEffect(() => {
+    if (reprise || choix) return;
+    appliquerMiseAJour();
+    const id = setInterval(appliquerMiseAJour, 15_000);
+    return () => clearInterval(id);
+  }, [reprise, choix]);
 
   async function touche(k: string) {
     if (!choix) return;

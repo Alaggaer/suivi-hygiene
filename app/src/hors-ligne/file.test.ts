@@ -27,6 +27,22 @@ function serveur() {
 
 function suite(nom: string, fabrique: () => Stockage) {
   describe(`file d'envoi (${nom})`, () => {
+    it("une saisie qui dépend d'une saisie refusée reste de côté avec elle, et repart ou s'abandonne avec elle", async () => {
+      const s = serveur(), st = fabrique(), f = new FileEnvoi(st, s.envoyeur);
+      const L = "11111111-1111-4111-8111-111111111111";
+      const livraison = { type: "livraison", id: L, par: "p1", par_nom: "K", at_client: "2026-11-20T10:00:00Z" } as unknown as Operation;
+      const anomalie = { type: "anomalies", lignes: [{ id: "22222222-2222-4222-8222-222222222222", ref_id: L }], par: "p1", par_nom: "K", at_client: "2026-11-20T10:00:00Z" } as unknown as Operation;
+      s.refuser("livraison");
+      await f.ajouter(livraison); await f.ajouter(anomalie); await f.ajouter(op("x"));
+      await f.vider();
+      expect(s.recu).toEqual(["x"]);   // l'anomalie n'est pas partie seule
+      const l = await st.lister();
+      expect(l.map((e) => e.statut)).toEqual(["bloquee", "bloquee"]);
+      expect(l[1].erreur).toMatch(/^Dépend d'une saisie refusée/);
+      await f.abandonner(l[0].cle);
+      expect(await st.lister()).toEqual([]);
+    });
+
     it("saisie refusée : peut être abandonnée, ne bloque plus la suite", async () => {
       const s = serveur(), st = fabrique(), f = new FileEnvoi(st, s.envoyeur);
       s.refuser("a");

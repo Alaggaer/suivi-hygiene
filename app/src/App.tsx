@@ -1,4 +1,3 @@
-import { appliquerMiseAJour } from "./miseAJour";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Anomalie, Api, Profil, Site, Tache, AlerteProduit } from "./types";
 import type { FileEnvoi } from "./hors-ligne/file";
@@ -95,8 +94,12 @@ export default function App({ api, file }: { api: Api; file: FileEnvoi }) {
 
   const recharger = useCallback(async () => {
     try {
-      const [t, a] = await Promise.all([api.taches(), api.anomaliesOuvertes()]);
-      setTaches(t); setAnomalies(a); setErreur(null);
+      // Chaque liste séparément : sans réseau, les anomalies gardées restent visibles même si les tâches du jour ne le sont pas.
+      const [t, a] = await Promise.allSettled([api.taches(), api.anomaliesOuvertes()]);
+      if (a.status === "fulfilled") setAnomalies(a.value);
+      if (t.status === "fulfilled") { setTaches(t.value); setErreur(null); }
+      else setErreur(navigator.onLine ? (t.reason as Error).message
+        : "Hors ligne : la liste des tâches du jour n'a pas encore pu être chargée aujourd'hui. Les saisies restent possibles et partiront au retour du réseau.");
       api.alertesDuSite().then(setAlertes).catch(() => {});
       api.nettoyageDuJour().catch(() => {});   // gardé pour l'ouvrir hors ligne
       api.produitsEntretien().then((l) => prechargerFiches(api, l.flatMap((p) => [p.ft, p.fds]).filter((x): x is string => !!x))).catch(() => {});
@@ -117,13 +120,12 @@ export default function App({ api, file }: { api: Api; file: FileEnvoi }) {
     if (ecran.nom === "accueil") { setProfil(null); return; }
     setEnVeille(true);
   });
-  // Écran « Qui êtes-vous ? » sans saisie en veille : bon moment pour passer à la nouvelle version si elle est prête.
+  // Veille trop longue (personne n'est revenu) : la saisie cachée est abandonnée, retour à « Qui êtes-vous ? ».
   useEffect(() => {
-    if (profil) return;
-    appliquerMiseAJour();
-    const id = setInterval(appliquerMiseAJour, 15_000);
-    return () => clearInterval(id);
-  }, [profil]);
+    if (!enVeille) return;
+    const id = setTimeout(() => { setEnVeille(false); setProfil(null); setEcran({ nom: "accueil" }); }, 30 * MIN);
+    return () => clearTimeout(id);
+  }, [enVeille]);
   const reprendre = (p: Profil) => {
     setEnVeille(false);
     if (p.id !== profil?.id) { setProfil(p); setEcran({ nom: "accueil" }); toast(`Bonjour ${p.nom}`); }
@@ -168,7 +170,7 @@ export default function App({ api, file }: { api: Api; file: FileEnvoi }) {
       <div className="top">
         <span className="site">{siege ? "Siège · Suivi Hygiène" : site ? `${site.nom} · ${site.ville}` : "Suivi Hygiène"}</span>
         {profil && !enVeille && <span className="who">{profil.nom} <button className="chipbtn" onClick={() => { setProfil(null); setEnVeille(false); setEcran({ nom: "accueil" }); }}>Changer d'utilisateur</button></span>}
-        {!siege && <Synchro enLigne={enLigne} attente={etatFile.attente} bloquees={etatFile.bloquees} onVoir={() => setVoirRefusees(true)} />}
+        {!siege && <Synchro enLigne={enLigne} attente={etatFile.attente} bloquees={etatFile.bloquees} onVoir={() => { if (!enVeille) setVoirRefusees(true); }} />}
         <span className="clock num">{hm(maintenant)}</span>
       </div>
       {api.mode === "demo" && (
@@ -186,7 +188,7 @@ export default function App({ api, file }: { api: Api; file: FileEnvoi }) {
         {enVeille && profil && <Connexion api={api} reprise={profil} onConnecte={reprendre} />}
       </main>
       {voirRefusees && <SaisiesRefusees entrees={entrees.filter((e) => e.statut === "bloquee")} onRelancer={(cle) => file.relancer(cle)}
-        onAbandonner={(cle) => file.abandonner(cle)} peutAbandonner={!!profil && profil.role !== "equipe"} onFermer={() => setVoirRefusees(false)} />}
+        onAbandonner={(cle) => file.abandonner(cle)} peutAbandonner={!!profil && !enVeille && profil.role !== "equipe"} onFermer={() => setVoirRefusees(false)} />}
     </div>
   );
   return site && profil ? <ContexteProvider valeur={{ api, file, site, profil }}>{contenu}</ContexteProvider> : contenu;
