@@ -856,4 +856,22 @@ do $$ declare avant int; begin
   assert (select count(*) from taches where site_id <> '00000000-0000-0000-0000-000000000001' or jour <> (now() at time zone 'Europe/Paris')::date) = avant,
     'tablette : rien créé pour un autre jour ni un autre site';
 end $$;
+-- correctif 0039 : écritures du serveur non bridées
+-- tâche planifiée (pas de jeton) : une seule anomalie par tâche non faite, même lancée deux fois
+update auth.claims set jwt = null;
+do $$ declare t uuid := gen_random_uuid(); begin
+  insert into taches (id, site_id, type, titre, jour, echeance) values (t, '00000000-0000-0000-0000-000000000001', 'autre', 'Test 0039', current_date - 2, now() - interval '2 days');
+  insert into anomalies (site_id, source, ref_id, categorie, gravite, titre) values ('00000000-0000-0000-0000-000000000001', 'tache', t, 'Tâche non faite', 'majeure', 'Tâche non faite : Test 0039');
+  assert (select source from anomalies where ref_id = t) = 'tache', 'tâche planifiée : origine gardée (doublons détectables)';
+end $$;
+-- fonction de l'app appelée par une tablette : origine gardée ; écriture directe : origine imposée
+update auth.claims set jwt = '{"sub":"00000000-0000-0000-0000-00000000a0a0","app_metadata":{"site_id":"00000000-0000-0000-0000-000000000001","role":"tablette"}}';
+do $$ declare a uuid := gen_random_uuid(); b uuid := gen_random_uuid(); begin
+  perform set_config('request.path', '/rpc/enregistrer_visite', true);
+  insert into anomalies (id, site_id, source, ref_id, categorie, gravite, titre) values (a, '00000000-0000-0000-0000-000000000001', 'visite', gen_random_uuid(), 'x', 'majeure', 'via rpc');
+  perform set_config('request.path', '/anomalies', true);
+  insert into anomalies (id, site_id, source, ref_id, categorie, gravite, titre) values (b, '00000000-0000-0000-0000-000000000001', 'visite', gen_random_uuid(), 'x', 'majeure', 'directe');
+  assert (select source from anomalies where id = a) = 'visite', 'rpc : origine gardée';
+  assert (select source from anomalies where id = b) = 'manuel', 'écriture directe d''une tablette : origine imposée';
+end $$;
 \echo TOUS_LES_TESTS_SQL_OK
