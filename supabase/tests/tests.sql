@@ -799,10 +799,8 @@ update anomalies set statut = 'traitee' where id = '00000000-0000-0000-0000-0000
 update auth.claims set jwt = '{"app_metadata":{"role":"tablette","site_id":"00000000-0000-0000-0000-000000000002"}}';
 set role tablette;
 do $$ declare n int; e uuid; r uuid := gen_random_uuid(); a uuid := gen_random_uuid(); begin
-  begin
-    perform generer_taches('2020-01-01');
-    raise exception 'ÉCHEC : une tablette génère les tâches du groupe';
-  exception when insufficient_privilege then null; end;
+  perform generer_taches('2020-01-01');   -- ancienne app : ramené aux tâches du jour de son site
+  assert not exists (select 1 from taches where jour = '2020-01-01'), 'une tablette ne génère pas les tâches d''un autre jour';
   n := generer_taches_du_site();
   assert not exists (select 1 from taches where jour = '2020-01-01'), 'aucune tâche à une date choisie';
   begin
@@ -849,5 +847,13 @@ do $$ declare l uuid := '00000000-0000-0000-0000-0000000000d1'; begin
   perform archiver_document('00000000-0000-0000-0000-00000000d003', null);   -- renvoi : déjà retiré
   assert heure_effective(now(), now() - interval '3 days') = now() - interval '3 days', 'week-end hors ligne : heure réelle gardée';
   assert heure_effective(now(), now() - interval '8 days') = now(), 'au-delà de 7 jours : heure de réception';
+end $$;
+-- ancienne app : generer_taches(date) depuis une tablette = tâches de son site, aujourd'hui seulement
+update auth.claims set jwt = '{"sub":"00000000-0000-0000-0000-00000000a0a0","app_metadata":{"site_id":"00000000-0000-0000-0000-000000000001","role":"tablette"}}';
+do $$ declare avant int; begin
+  select count(*) into avant from taches where site_id <> '00000000-0000-0000-0000-000000000001' or jour <> (now() at time zone 'Europe/Paris')::date;
+  perform generer_taches(((now() at time zone 'Europe/Paris')::date + 3));
+  assert (select count(*) from taches where site_id <> '00000000-0000-0000-0000-000000000001' or jour <> (now() at time zone 'Europe/Paris')::date) = avant,
+    'tablette : rien créé pour un autre jour ni un autre site';
 end $$;
 \echo TOUS_LES_TESTS_SQL_OK

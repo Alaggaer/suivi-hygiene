@@ -1,3 +1,4 @@
+import { appliquerMiseAJour } from "./miseAJour";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Anomalie, Api, Profil, Site, Tache, AlerteProduit } from "./types";
 import type { FileEnvoi } from "./hors-ligne/file";
@@ -116,6 +117,13 @@ export default function App({ api, file }: { api: Api; file: FileEnvoi }) {
     if (ecran.nom === "accueil") { setProfil(null); return; }
     setEnVeille(true);
   });
+  // Écran « Qui êtes-vous ? » sans saisie en veille : bon moment pour passer à la nouvelle version si elle est prête.
+  useEffect(() => {
+    if (profil) return;
+    appliquerMiseAJour();
+    const id = setInterval(appliquerMiseAJour, 15_000);
+    return () => clearInterval(id);
+  }, [profil]);
   const reprendre = (p: Profil) => {
     setEnVeille(false);
     if (p.id !== profil?.id) { setProfil(p); setEcran({ nom: "accueil" }); toast(`Bonjour ${p.nom}`); }

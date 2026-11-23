@@ -1,3 +1,4 @@
+import { surveillerMisesAJour } from "./miseAJour";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import App from "./App";
@@ -20,6 +21,7 @@ const stockage = demo || typeof indexedDB === "undefined" ? stockageMemoire() : 
 const file = new FileEnvoi(stockage, api);
 // Demande au navigateur de ne pas effacer les saisies en attente quand l'espace manque.
 if (!demo) navigator.storage?.persist?.().catch(() => {});
+if (!demo) surveillerMisesAJour();
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
