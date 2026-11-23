@@ -134,7 +134,8 @@ jobs:
           R="rclone --config rclone.conf --retries 5 --low-level-retries 10 --stats 0"
           D=sauvegarde:suivi-hygiene
           # Ajoute seulement ce qui manque ; --immutable refuse de remplacer une photo déjà copiée.
-          $R copy supa:photos "$D/photos" --immutable --transfers 4
+          # Comparaison par la taille : Google Drive ne garde pas l'heure des fichiers de Supabase (sinon faux « fichier modifié »).
+          $R copy supa:photos "$D/photos" --immutable --size-only --transfers 4
           # Contrôle : chaque fichier de Supabase est bien présent (même taille) dans le Drive.
           $R check supa:photos "$D/photos" --one-way --size-only
           N=$($R lsf -R --files-only supa:photos | wc -l)
