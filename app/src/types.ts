@@ -283,6 +283,8 @@ export interface Api {
   fournisseursNonConformes(jours: number): Promise<FournisseurNC[]>;
   anomaliesSiege(): Promise<AnomalieSiege[]>;
   etatRestaurants(): Promise<EtatRestaurant[]>;
+  /** Santé de l'envoi des alertes e-mail (siège). */
+  etatAlertes(): Promise<EtatAlertes>;
   historiqueSite(siteId: string, jours: number): Promise<JourHistorique[]>;
   /** Le siège traite ou vérifie une anomalie (en ligne uniquement, sous son propre profil). */
   siegeChangerStatut(id: string, statut: "traitee" | "verifiee", commentaire?: string): Promise<void>;
@@ -298,4 +300,9 @@ export interface Api {
   /** Écritures : appelées uniquement par la file d'envoi, et rejouables sans doublon. */
   executer(op: Operation): Promise<void>;
   televerserPhoto(chemin: string, blob: Blob): Promise<void>;
+}
+
+export interface EtatAlertes {
+  ok: boolean; appels_reussis_1h: number; appels_en_echec_1h: number; dernier_appel_reussi: string | null;
+  dernier_echec: string | null; planification_en_echec_1h: number; alertes_non_envoyees: number; alertes_sans_destinataire: number;
 }

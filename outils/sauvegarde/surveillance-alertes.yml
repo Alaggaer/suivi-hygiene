@@ -1,0 +1,34 @@
+# Vérification indépendante de l'envoi des alertes e-mail de Suivi Hygiène.
+# À placer dans le dépôt PRIVÉ Alaggaer/suivi-hygiene-sauvegardes sous .github/workflows/surveillance-alertes.yml.
+# Si les alertes ne partent plus (planification, fonction d'envoi, Resend), ce contrôle échoue
+# et GitHub envoie un e-mail d'échec : un canal qui ne dépend pas de la chaîne surveillée.
+# Secret : SAUVEGARDE_DB_PASSWORD (compte « sauvegarde », lecture seule), déjà utilisé par la sauvegarde.
+name: Surveillance des alertes
+on:
+  schedule:
+    - cron: "23 6-20/3 * * *"     # toutes les 3 h en journée (heure UTC)
+  workflow_dispatch:
+
+jobs:
+  verifier:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: État de l'envoi des alertes
+        env:
+          M: "${{ secrets.SAUVEGARDE_DB_PASSWORD }}"
+          PGHOST: aws-0-eu-west-3.pooler.supabase.com
+          PGPORT: "5432"
+          PGUSER: sauvegarde.ldsxlovhueuzmhrzofjo
+          PGDATABASE: postgres
+          PGSSLMODE: require
+        run: |
+          if [ -z "$M" ]; then echo "::error::Secret SAUVEGARDE_DB_PASSWORD absent"; exit 1; fi
+          M=${M//\\/\\\\}; M=${M//:/\\:}
+          printf '%s\n' "$PGHOST:$PGPORT:$PGDATABASE:$PGUSER:$M" > ~/.pgpass; chmod 600 ~/.pgpass
+          E=$(psql -At -v ON_ERROR_STOP=1 -c "select etat_alertes()")
+          echo "$E" | python3 -m json.tool
+          if [ "$(echo "$E" | python3 -c 'import json,sys; print(json.load(sys.stdin)["ok"])')" != "True" ]; then
+            echo "::error::Les alertes e-mail de Suivi Hygiène ne partent plus : voir le détail ci-dessus et le bandeau du siège."
+            exit 1
+          fi
+          echo "Alertes e-mail : envoi normal."

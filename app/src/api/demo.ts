@@ -405,6 +405,8 @@ export const demoApi: Api = {
   motDePasseTablette: async (_id, mdp) => { if (mdp.length < 10) throw new Error("Mot de passe trop court : 10 caractères au moins"); },
   siegeCloreProduit: async (id) => { const p = produitsDemo.find((x) => x.id === id); if (p) p.actif = false; },
   anomaliesSiege: () => attendre(anomaliesGroupe.map((a) => ({ ...a }))),
+  etatAlertes: async () => ({ ok: true, appels_reussis_1h: 12, appels_en_echec_1h: 0, dernier_appel_reussi: new Date().toISOString(),
+    dernier_echec: null, planification_en_echec_1h: 0, alertes_non_envoyees: 0, alertes_sans_destinataire: 0 }),
   etatRestaurants: async () => {
     // État du jour d'exemple, cohérent avec les anomalies du groupe ci-dessus.
     const ilYa = (min: number) => iso(Date.now() - min * MIN);

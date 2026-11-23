@@ -878,4 +878,17 @@ do $$ declare a uuid := gen_random_uuid(); b uuid := gen_random_uuid(); begin
   assert (select source from anomalies where titre = 'via graphql') = 'manuel', 'GraphQL : contrôlé comme une écriture directe';
   assert (select statut from anomalies where titre = 'via graphql') = 'ouverte', 'GraphQL : une anomalie naît ouverte';
 end $$;
+-- surveillance des alertes : réservée au siège ; en local (sans pg_net) aucun appel réussi → pas « ok »
+update auth.claims set jwt = '{"sub":"00000000-0000-0000-0000-00000000a0a0","app_metadata":{"site_id":"00000000-0000-0000-0000-000000000001","role":"tablette"}}';
+set role tablette;   -- comme une vraie connexion de tablette (pas le compte postgres des tests)
+do $$ begin
+  begin perform etat_alertes(); raise exception 'ÉCHEC : une tablette lit la surveillance des alertes';
+  exception when insufficient_privilege then null; end;
+end $$;
+reset role;
+update auth.claims set jwt = '{"app_metadata":{"role":"siege"}}';
+do $$ declare e jsonb := etat_alertes(); begin
+  assert (e->>'ok')::boolean = false, 'sans appel réussi récent, la chaîne d''alertes n''est pas déclarée en bon état';
+  assert e ? 'alertes_non_envoyees', 'détail des alertes non envoyées';
+end $$;
 \echo TOUS_LES_TESTS_SQL_OK

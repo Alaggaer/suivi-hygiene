@@ -22,7 +22,7 @@ function faux(): Api & { reseau: boolean } {
     anomaliesOuvertes: async () => { panne(); return []; },
     executer: async () => {}, televerserPhoto: async () => {},
     estSiege: async () => false, tableauSiege: async () => [], fournisseursNonConformes: async () => [],
-    anomaliesSiege: async () => [], siegeCorriger: async () => {}, siegeRattraper: async () => {}, equipementsSite: async () => ({ enceintes: [], friteuses: [] }), etatRestaurants: async () => [], livraisonsDuJour: async () => [], stocksMortsDuSite: async () => [], stocksMortsSiege: async () => [],
+    anomaliesSiege: async () => [], siegeCorriger: async () => {}, siegeRattraper: async () => {}, equipementsSite: async () => ({ enceintes: [], friteuses: [] }), etatRestaurants: async () => [], etatAlertes: async () => ({ ok: true, appels_reussis_1h: 1, appels_en_echec_1h: 0, dernier_appel_reussi: null, dernier_echec: null, planification_en_echec_1h: 0, alertes_non_envoyees: 0, alertes_sans_destinataire: 0 }), livraisonsDuJour: async () => [], stocksMortsDuSite: async () => [], stocksMortsSiege: async () => [],
     siegeRetirerProduit: async () => {}, siegeCloreProduit: async () => {},
     planAction: async () => [], etatControles: async () => [], etatMetrologie: async () => [], ajouterAppareil: async () => {}, pmsGroupe: async () => [], typesDocuments: async () => [], documentsSite: async () => ({ documents: [], attendus: [] }), documentsArchives: async () => [],
     documentsGroupe: async () => [], siegeEnregistrerDocument: async () => {}, siegeArchiverDocument: async () => {}, etatVisites: async () => ({ eurofins_mois: 2, derniere_eurofins: null, prochaine_eurofins: null, etat_eurofins: "jamais" as const, visites: [] }),

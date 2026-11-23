@@ -3,7 +3,7 @@ import { NettoyageSiegeVue } from "./NettoyageSiege";
 import { AlertesSiege } from "./AlertesSiege";
 import { Gestion } from "./Gestion";
 import { useEffect, useMemo, useState } from "react";
-import type { AnomalieSiege, Api, Correction, Fournisseur, StockMortSiege, EtatRestaurant, JourHistorique, Preuves, TableCorrigeable } from "../types";
+import type { AnomalieSiege, Api, Correction, Fournisseur, StockMortSiege, EtatRestaurant, JourHistorique, Preuves, TableCorrigeable, EtatAlertes } from "../types";
 import { BORNES_HUILE, bornesReleve, dansBornes, depuis, indicateursRestaurant, trierRestaurants, type Bornes, type Indicateur, type NiveauResto } from "../logique";
 
 /**
@@ -35,10 +35,12 @@ export function TableauSiege({ api }: { api: Api }) {
   const [anomalies, setAnomalies] = useState<AnomalieSiege[]>([]);
   const [erreur, setErreur] = useState<string | null>(null);
   const [maintenant, setMaintenant] = useState(() => new Date());
+  const [alertes, setAlertes] = useState<EtatAlertes | null>(null);
 
   const charger = () => Promise.all([api.etatRestaurants(), api.anomaliesSiege()])
     .then(([e, a]) => { setEtats(e); setAnomalies(a); setErreur(null); setMaintenant(new Date()); })
-    .catch((e) => setErreur((e as Error).message));
+    .catch((e) => setErreur((e as Error).message))
+    .finally(() => { api.etatAlertes().then(setAlertes).catch(() => { /* surveillance indisponible : pas de bandeau */ }); });
   useEffect(() => {
     charger();
     const t = setInterval(charger, 60_000);   // l'accueil se met à jour tout seul chaque minute
@@ -55,6 +57,7 @@ export function TableauSiege({ api }: { api: Api }) {
 
   return (
     <div className="siege3">
+      {alertes && !alertes.ok && <BandeauAlertes e={alertes} />}
       <div className="s3-barre">
         {vue.nom !== "accueil" && <button className="s3-retour" onClick={() => setVue({ nom: "accueil" })}>← Tous les restaurants</button>}
         <span className="s3-date">{new Date().toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long", timeZone: "Europe/Paris" })}</span>
@@ -676,5 +679,21 @@ function StocksMortsSiege({ api, onOuvrir }: { api: Api; onOuvrir: (siteId: stri
         </div>
       )}
     </main>
+  );
+}
+
+/** Les e-mails d'alerte ne partent plus : le siège doit le savoir, puisque les restaurants comptent dessus. */
+function BandeauAlertes({ e }: { e: EtatAlertes }) {
+  const raisons = [
+    e.appels_reussis_1h === 0 && "la fonction d'envoi n'a pas été appelée avec succès depuis une heure",
+    e.appels_en_echec_1h > 0 && `${e.appels_en_echec_1h} appel(s) en échec${e.dernier_echec ? ` (${e.dernier_echec})` : ""}`,
+    e.planification_en_echec_1h > 0 && "la planification automatique échoue",
+    e.alertes_non_envoyees > 0 && `${e.alertes_non_envoyees} alerte(s) en attente depuis plus de 30 min`,
+  ].filter(Boolean);
+  return (
+    <p className="pill bad" role="alert" style={{ display: "block", marginBottom: 12 }}>
+      <b>Les alertes e-mail ne partent plus.</b> Les restaurants et le siège ne sont plus prévenus des anomalies : {raisons.join(" ; ")}.
+      Les anomalies restent visibles ici.
+    </p>
   );
 }

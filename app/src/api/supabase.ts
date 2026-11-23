@@ -1,5 +1,5 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
-import type { ClasseurSite, DocumentArchive, TypeDocument, EtatVisites, ActionPlan, AppareilMesure, ControleSite, ModeleControle, PmsGroupe, ElementNettoyage, NettoyageSiege, ProduitEntretien, TacheNettoyage, AlerteProduit, AlerteSiege, Anomalie, AnomalieSiege, Api, Correction, Employe, EnceinteGestion, FournisseurGestion, FriteuseGestion, LivraisonJour, ModeleTache, SiteGestion, StockMort, StockMortSiege, Tablette, Enceinte, Friteuse, EtatRestaurant, JourHistorique, Preuves, EtatFriteuse, Fournisseur, FournisseurNC, LigneSiege, SeuilsHuile, Site, Tache } from "../types";
+import type { ClasseurSite, DocumentArchive, TypeDocument, EtatVisites, ActionPlan, AppareilMesure, ControleSite, ModeleControle, PmsGroupe, ElementNettoyage, NettoyageSiege, ProduitEntretien, TacheNettoyage, AlerteProduit, AlerteSiege, Anomalie, AnomalieSiege, Api, Correction, Employe, EnceinteGestion, FournisseurGestion, FriteuseGestion, LivraisonJour, ModeleTache, SiteGestion, StockMort, StockMortSiege, Tablette, Enceinte, Friteuse, EtatRestaurant, JourHistorique, Preuves, EtatFriteuse, Fournisseur, FournisseurNC, LigneSiege, SeuilsHuile, Site, Tache, EtatAlertes } from "../types";
 import { ErreurDefinitive, type Operation } from "../operations";
 
 /**
@@ -114,6 +114,7 @@ export function supabaseApi(url: string, cleAnon: string): Api {
     async etatRestaurants() {
       return (ok(await sb.rpc("etat_restaurants")) as EtatRestaurant[]).map((e) => ({ ...e, huile_max: e.huile_max === null ? null : Number(e.huile_max) }));
     },
+    async etatAlertes() { return ok(await sb.rpc("etat_alertes")) as EtatAlertes; },
     async historiqueSite(siteId, jours) { return ok(await sb.rpc("historique_site", { p_site: siteId, p_jours: jours })) as JourHistorique[]; },
     async anomaliesSiege() { return ok(await sb.rpc("anomalies_siege")) as AnomalieSiege[]; },
     async siegeChangerStatut(id, statut, commentaire) {
