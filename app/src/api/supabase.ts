@@ -156,8 +156,8 @@ export function supabaseApi(url: string, cleAnon: string): Api {
       return data.signedUrl;
     },
     async fournisseurs() {
-      return (ok(await sb.from("fournisseurs").select("id, nom, viande, jours_livraison, produits").eq("actif", true).order("nom")) as (Fournisseur & { jours_livraison: number[] | null })[])
-        .map((f) => ({ id: f.id, nom: f.nom, viande: f.viande, jours: f.jours_livraison, produits: f.produits }));
+      return (ok(await sb.from("fournisseurs").select("id, nom, viande, jours_livraison, produits, familles").eq("actif", true).order("nom")) as (Fournisseur & { jours_livraison: number[] | null })[])
+        .map((f) => ({ id: f.id, nom: f.nom, viande: f.viande, jours: f.jours_livraison, produits: f.produits, familles: f.familles }));
     },
     async planAction(siteId) { return ok(await sb.rpc("plan_action", { p_site: siteId })) as ActionPlan[]; },
     async etatControles(siteId) { return ok(await sb.rpc("etat_controles", { p_site: siteId })) as ControleSite[]; },
@@ -238,7 +238,7 @@ export function supabaseApi(url: string, cleAnon: string): Api {
         modeles: ok(m) as ModeleTache[],
       };
     },
-    async fournisseursGestion() { return ok(await sb.from("fournisseurs").select("id, nom, viande, produits, jours_livraison, actif").order("nom")) as FournisseurGestion[]; },
+    async fournisseursGestion() { return ok(await sb.from("fournisseurs").select("id, nom, viande, produits, familles, jours_livraison, actif").order("nom")) as FournisseurGestion[]; },
     async siegeEnregistrer(table, ligne) {
       const { id, ...reste } = ligne as { id?: string };
       verifier(id ? await sb.from(table).update(reste).eq("id", id) : await sb.from(table).insert(reste));
@@ -304,7 +304,7 @@ export function supabaseApi(url: string, cleAnon: string): Api {
         case "livraison": {
           await inserer("livraisons", [{
             id: op.id, site_id, par: op.par, at_client: op.at_client, fournisseur_id: op.fournisseur_id,
-            t_camion: op.t_camion, t_frais: op.t_frais ?? null, t_surgele: op.t_surgele ?? null, photo_bl: op.photo_bl,
+            t_camion: op.t_camion, t_frais: op.t_frais ?? null, t_surgele: op.t_surgele ?? null, t_produits: op.t_produits ?? null, photo_bl: op.photo_bl,
             photos_bl_suite: op.photos_bl_suite?.length ? op.photos_bl_suite : null, produits_refuses: op.produits_refuses ?? null,
             viande: op.viande, origine_ok: op.origine_ok ?? null, conforme: op.conforme,
             motifs: op.motifs ?? null, action: op.action ?? null, photo_nc: op.photo_nc ?? null,

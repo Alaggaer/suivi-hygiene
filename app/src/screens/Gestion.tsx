@@ -1,8 +1,7 @@
 import { ImportTableau } from "./ImportTableau";
 import { useEffect, useState } from "react";
 import type {
-  Api, Employe, EnceinteGestion, FournisseurGestion, FriteuseGestion, ModeleTache, ProduitLivre, RoleEmploye, SiteGestion, Tablette,
-} from "../types";
+  Api, Employe, EnceinteGestion, FournisseurGestion, FriteuseGestion, ModeleTache, ProduitLivre, RoleEmploye, SiteGestion, Tablette, FamilleFrais,} from "../types";
 
 /**
  * Gestion par le siège : restaurants (horaires), compte de la tablette, employés et codes PIN,
@@ -300,6 +299,8 @@ function NouveauRestaurant({ api, onCree }: { api: Api; onCree: (id: string) => 
 
 /* Fournisseurs du groupe */
 const PRODUITS: { cle: ProduitLivre; libelle: string }[] = [{ cle: "frais", libelle: "frais" }, { cle: "sec", libelle: "sec" }, { cle: "surgele", libelle: "surgelés" }];
+// Familles de frais : chacune a sa température de réception. Aucune cochée : toutes sont demandées à la réception.
+const FAMILLES_G: { cle: FamilleFrais; libelle: string }[] = [{ cle: "bof", libelle: "laitiers" }, { cle: "poisson", libelle: "poisson" }, { cle: "viande", libelle: "viande" }, { cle: "legumes", libelle: "légumes" }];
 function Fournisseurs({ api }: { api: Api }) {
   const [liste, setListe] = useState<FournisseurGestion[] | null>(null);
   const { enCours, faire, Retour } = useAction();
@@ -310,7 +311,7 @@ function Fournisseurs({ api }: { api: Api }) {
   return (
     <section className="s3-bloc">
       <h2>Fournisseurs du groupe</h2>
-      <p className="hint">Ce qu'ils livrent décide des températures demandées à la réception ; « viande » fait demander l'origine ; les jours de livraison les mettent en tête de liste ces jours-là.</p>
+      <p className="hint">Ce qu'ils livrent décide des températures demandées à la réception (frais : précisez les familles, chacune a ses seuils ; aucune cochée = toutes demandées) ; « viande » fait demander l'origine ; les jours de livraison les mettent en tête de liste ces jours-là.</p>
       <Retour />
       <div className="table-scroll"><table className="tbl g-table"><thead><tr><th>Fournisseur</th><th>Livre</th><th>Viande</th><th>Jours de livraison</th><th>État</th><th /></tr></thead><tbody>
         {(liste ?? []).map((f, i) => (
@@ -321,7 +322,12 @@ function Fournisseurs({ api }: { api: Api }) {
                 const on = !!x.produits?.includes(p.cle);
                 return <button key={p.cle} type="button" className={`g-jour ${on ? "sel" : ""}`} aria-pressed={on}
                   onClick={() => { const l = on ? (x.produits ?? []).filter((y) => y !== p.cle) : [...(x.produits ?? []), p.cle]; set({ ...x, produits: l.length ? l : null }); }}>{p.libelle}</button>;
-              })}</td>
+              })}
+              {x.produits?.includes("frais") && <div className="g-sous">frais : {FAMILLES_G.map((p) => {
+                const on = !!x.familles?.includes(p.cle);
+                return <button key={p.cle} type="button" className={`g-jour ${on ? "sel" : ""}`} aria-pressed={on}
+                  onClick={() => { const l = on ? (x.familles ?? []).filter((y) => y !== p.cle) : [...(x.familles ?? []), p.cle]; set({ ...x, familles: l.length ? l : null }); }}>{p.libelle}</button>;
+              })}</div>}</td>
               <td><label className="g-case"><input type="checkbox" checked={x.viande} onChange={(v) => set({ ...x, viande: v.target.checked })} /> oui</label></td>
               <td className="g-jours">{JOURS.map((j, k) => {
                 const on = !!x.jours_livraison?.includes(k + 1);

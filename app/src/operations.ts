@@ -1,4 +1,4 @@
-import type { Gravite } from "./types";
+import type { Gravite, FamilleFrais } from "./types";
 
 /**
  * Tout ce que la tablette écrit passe par une « opération » mise en file d'attente.
@@ -18,7 +18,7 @@ export type Operation =
   | (Base & { type: "terminer_tache"; tache_id: string })
   | (Base & {
       type: "livraison"; id: string; fournisseur_id: string; fournisseur_nom: string;
-      t_camion: number; t_frais?: number; t_surgele?: number; photo_bl: string; photos_bl_suite?: string[];
+      t_camion: number; t_frais?: number; t_surgele?: number; t_produits?: Partial<Record<FamilleFrais, number>>; photo_bl: string; photos_bl_suite?: string[];
       viande: boolean; origine_ok?: boolean; conforme: boolean; motifs?: string[]; action?: string; photo_nc?: string;
       produits_refuses?: string;
     })

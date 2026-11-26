@@ -62,8 +62,8 @@ describe("lecture du classeur", () => {
       { restaurant: "ATLANTA", nom: "David", role: "responsable" },   // depuis l'onglet Restaurants
     ]);
     expect(m.fournisseurs).toEqual([
-      { nom: "BEAUVALLET", produits: ["frais"], viande: true, jours: [2, 5] },
-      { nom: "SYSCO", produits: null, viande: null, jours: null },
+      { nom: "BEAUVALLET", produits: ["frais"], familles: null, viande: true, jours: [2, 5] },
+      { nom: "SYSCO", produits: null, familles: null, viande: null, jours: null },
     ]);
     const msg = m.problemes.map((p) => `${p.onglet}:${p.ligne}:${p.bloquant ? "B" : "i"}:${p.message}`);
     expect(msg).toEqual(expect.arrayContaining([
@@ -160,5 +160,16 @@ describe("plan d'import : noms proches", () => {
   it("un prénom seul retrouve la personne s'il ne peut désigner qu'elle", () => {
     const m = lire([["Saint-Malo", "Marie", "Curie", "Équipe"]]);
     expect(planifier(m, { ...base, employes: { s1: [{ id: "p1", nom: "Marie", role: "equipe", actif: true }] } }).actions).toEqual([]);
+  });
+});
+
+
+describe("import : familles de frais", () => {
+  it("lit les familles et les compte comme du frais", async () => {
+    const { produits, familles } = await import("./parametrage");
+    expect(produits("Viande, Poisson, Sec")).toEqual(["frais", "sec"]);
+    expect(familles("Viande, Poisson, Sec")).toEqual(["viande", "poisson"]);
+    expect(familles("Fruits et légumes")).toEqual(["legumes"]);
+    expect(familles("Frais")).toBeNull();
   });
 });

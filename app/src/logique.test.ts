@@ -195,7 +195,9 @@ describe("Espace PMS", () => {
   });
   it("sondes : tolérances glace fondante et eau bouillante", () => {
     expect(lectureConforme("glace", 0.5)).toBe(true);
-    expect(lectureConforme("glace", -0.6)).toBe(false);
+    expect(lectureConforme("glace", -0.8)).toBe(true);    // classeur : entre −1 et +1 °C
+    expect(lectureConforme("glace", 1)).toBe(false);
+    expect(lectureConforme("glace", -1.2)).toBe(false);
     expect(lectureConforme("ebullition", 99)).toBe(true);
     expect(lectureConforme("ebullition", 101.5)).toBe(false);
   });
@@ -214,5 +216,22 @@ describe("vérification de sonde", () => {
     expect(lecturePlausible("ebullition", 99.6)).toBe(true);
     expect(lecturePlausible("ebullition", 996)).toBe(false);
     expect(lecturePlausible("glace", 25)).toBe(false);
+  });
+});
+
+
+describe("réception : seuils par famille (classeur du groupe)", () => {
+  it("poisson 0/+2, viande 0/+3, laitiers 0/+4, légumes +1/+8", async () => {
+    const { verdictLivraison, famillesAMesurer } = await import("./logique");
+    const v = (produits: Record<string, number>) => verdictLivraison({ camion: 2, produits, problemes: [], viande: false, origine: null }).conforme;
+    expect(v({ poisson: 2 })).toBe(true);
+    expect(v({ poisson: 3 })).toBe(false);
+    expect(v({ viande: 3.5 })).toBe(false);
+    expect(v({ legumes: 6 })).toBe(true);
+    expect(v({ legumes: 0.5 })).toBe(false);
+    expect(v({ bof: -1 })).toBe(false);
+    expect(famillesAMesurer({ produits: ["frais"], familles: ["poisson"] })).toEqual(["poisson"]);
+    expect(famillesAMesurer({ produits: ["frais"] })).toEqual(["bof", "poisson", "viande", "legumes"]);
+    expect(famillesAMesurer({ produits: ["sec"] })).toEqual([]);
   });
 });

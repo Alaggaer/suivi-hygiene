@@ -1,17 +1,22 @@
 import { useEffect, useId, useMemo, useState } from "react";
-import type { Fournisseur, LivraisonJour } from "../types";
+import type { FamilleFrais, Fournisseur, LivraisonJour } from "../types";
 import type { Entree } from "../hors-ligne/stockage";
 import { nouvelId, useContexte, useEnregistrer } from "../contexte";
 import {
-  BORNES_LIVRAISON, cheminPhoto, DECISIONS_LIVRAISON, LIBELLE_PRODUITS, MIN, temperaturesDemandees, PROBLEMES_LIVRAISON, SEUILS_LIVRAISON, trierFournisseurs, verdictLivraison,
+  BORNES_LIVRAISON, cheminPhoto, DECISIONS_LIVRAISON, familleOk, famillesAMesurer, LIBELLE_PRODUITS, MIN, temperaturesDemandees, PROBLEMES_LIVRAISON,
+  SEUILS_FAMILLES, SEUILS_LIVRAISON, trierFournisseurs, verdictLivraison,
 } from "../logique";
 import type { Minuteur } from "../minuteurs";
 import { compresserPhoto } from "../photos";
 import { useRangerLivraison } from "../rangement";
 import { duree, PaveNumerique, temp, useMaintenant, useToast } from "../ui/outils";
 
-type Champ = "camion" | "frais" | "surgele";
-const LIBELLES: Record<Champ, string> = { camion: "Camion", frais: "Frais", surgele: "Surgelés" };
+// Produits frais : une température par famille (poisson, viande, laitiers, légumes), chacune avec ses seuils.
+type Champ = "camion" | "surgele" | FamilleFrais;
+const estFamille = (k: Champ): k is FamilleFrais => k in SEUILS_FAMILLES;
+const libelle = (k: Champ) => (estFamille(k) ? SEUILS_FAMILLES[k].libelle : k === "camion" ? "Camion" : "Surgelés");
+const seuil = (k: Champ) => (estFamille(k) ? `${temp(SEUILS_FAMILLES[k].min)} à ${temp(SEUILS_FAMILLES[k].max)}` : `max ${temp(SEUILS_LIVRAISON[k])}`);
+const champOk = (k: Champ, v: number) => (estFamille(k) ? familleOk(k, v) : v <= SEUILS_LIVRAISON[k]);
 const heure = (iso: string) => new Date(iso).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
 
 /**
@@ -108,9 +113,9 @@ function Reception({ four, onAnnuler, onFini, lancerMinuteur }: { four: Fourniss
   const toast = useToast();
   // Ce que le fournisseur ne livre pas est pré-rempli « Aucun » (toujours modifiable en touchant la case).
   const demandees = temperaturesDemandees(four.produits);
-  const [t, setT] = useState<Partial<Record<Champ, number | "aucun">>>(() => ({
-    ...(demandees.frais ? {} : { frais: "aucun" as const }), ...(demandees.surgele ? {} : { surgele: "aucun" as const }),
-  }));
+  const familles = famillesAMesurer(four);
+  const champs: Champ[] = ["camion", ...familles, "surgele"];
+  const [t, setT] = useState<Partial<Record<Champ, number | "aucun">>>(() => (demandees.surgele ? {} : { surgele: "aucun" as const }));
   const [pave, setPave] = useState<Champ | null>(null);
   const [pages, setPages] = useState<Blob[]>([]);
   const [rien, setRien] = useState(false);
@@ -123,8 +128,9 @@ function Reception({ four, onAnnuler, onFini, lancerMinuteur }: { four: Fourniss
   const [erreur, setErreur] = useState<string | null>(null);
 
   const num = (k: Champ) => (typeof t[k] === "number" ? (t[k] as number) : undefined);
-  const v = verdictLivraison({ camion: num("camion"), frais: num("frais"), surgele: num("surgele"), problemes, viande: !!four.viande, origine });
-  const tempsOk = t.camion !== undefined && t.frais !== undefined && t.surgele !== undefined;
+  const produits = Object.fromEntries(familles.filter((f) => typeof t[f] === "number").map((f) => [f, t[f] as number])) as Partial<Record<FamilleFrais, number>>;
+  const v = verdictLivraison({ camion: num("camion"), produits, surgele: num("surgele"), problemes, viande: !!four.viande, origine });
+  const tempsOk = champs.every((k) => t[k] !== undefined);
   const controleOk = rien || problemes.length > 0;
   const origineOk = !four.viande || origine !== null;
   // Une réponse donnée quand la livraison semblait non conforme ne compte plus si elle redevient conforme (température corrigée).
@@ -144,7 +150,7 @@ function Reception({ four, onAnnuler, onFini, lancerMinuteur }: { four: Fourniss
       const nc = photoNc ? { chemin: cheminPhoto(site.id, nouvelId(), maintenant), blob: photoNc } : null;
       await enregistrer({
         type: "livraison", id, fournisseur_id: four.id, fournisseur_nom: four.nom,
-        t_camion: t.camion, t_frais: num("frais"), t_surgele: num("surgele"),
+        t_camion: t.camion, t_produits: Object.keys(produits).length ? produits : undefined, t_surgele: num("surgele"),
         photo_bl: photos[0].chemin, photos_bl_suite: photos.slice(1).map((p) => p.chemin),
         viande: !!four.viande, origine_ok: four.viande ? origine ?? undefined : undefined,
         conforme: v.conforme, motifs: v.conforme ? undefined : v.motifs, action: v.conforme ? undefined : dec ?? undefined,
@@ -179,15 +185,15 @@ function Reception({ four, onAnnuler, onFini, lancerMinuteur }: { four: Fourniss
         <section className="card">
           <h2 className="liv-titre">1 · Températures</h2>
           <div className="liv-temps">
-            {(["camion", "frais", "surgele"] as Champ[]).map((k) => {
-              const val = t[k], mesure = typeof val === "number", ko = mesure && (val as number) > SEUILS_LIVRAISON[k];
+            {champs.map((k) => {
+              const val = t[k], mesure = typeof val === "number", ko = mesure && !champOk(k, val as number);
               return (
                 <div key={k} className="liv-temp-case">
                   <button className={`liv-temp ${val === undefined ? "" : val === "aucun" ? "aucun" : ko ? "bad" : "ok"}`} onClick={() => setPave(k)}>
-                    <span>{LIBELLES[k]} · max {temp(SEUILS_LIVRAISON[k])}</span>
+                    <span>{libelle(k)} · {seuil(k)}</span>
                     <b>{val === undefined ? "Mesurer" : val === "aucun" ? "Aucun" : temp(val as number)}</b>
                   </button>
-                  {k !== "camion" && val === undefined && <button className="lien" onClick={() => setT({ ...t, [k]: "aucun" })}>{k === "frais" ? "Pas de frais" : "Pas de surgelés"}</button>}
+                  {k !== "camion" && val === undefined && <button className="lien" onClick={() => setT({ ...t, [k]: "aucun" })}>{estFamille(k) ? SEUILS_FAMILLES[k].aucun : "Pas de surgelés"}</button>}
                 </div>
               );
             })}
@@ -240,7 +246,7 @@ function Reception({ four, onAnnuler, onFini, lancerMinuteur }: { four: Fourniss
         {envoi ? "Enregistrement…" : manque ?? (dec === "Tout refusé" ? "Valider le refus" : "Valider · lancer le rangement (15 min)")}
       </button>
       {pave && (
-        <PaveNumerique titre={`${LIBELLES[pave]} · max ${temp(SEUILS_LIVRAISON[pave])}`} unite="°C" signe bornes={BORNES_LIVRAISON[pave]}
+        <PaveNumerique titre={`${libelle(pave)} · ${seuil(pave)}`} unite="°C" signe bornes={BORNES_LIVRAISON[estFamille(pave) ? "frais" : pave]}
           onFermer={() => setPave(null)} onValider={(x) => { setT({ ...t, [pave]: x }); setPave(null); }} />
       )}
     </div>

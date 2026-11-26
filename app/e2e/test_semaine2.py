@@ -14,8 +14,11 @@ def test_livraison_conforme_verdict_automatique(page):
     page.click(".liv-four:has-text('Transgourmet')")
     bouton = page.locator("button.bigbtn")
     assert bouton.inner_text() == "Mesurez les températures"
+    assert [t.split(" · ")[0] for t in page.locator(".liv-temp span").all_inner_texts()] == ["Camion", "Produits laitiers", "Viande", "Surgelés"], \
+        "une température par famille livrée"
     saisir(page, page.locator(".liv-temp").nth(0), "2.5")
-    saisir(page, page.locator(".liv-temp").nth(1), "3")
+    saisir(page, page.locator(".liv-temp").nth(1), "3")      # laitiers 0/+4
+    saisir(page, page.locator(".liv-temp").nth(2), "2.5")    # viande 0/+3
     page.click("text=Pas de surgelés")
     assert bouton.inner_text() == "Photographiez le bon de livraison"
     page_bl(page, 2)
@@ -37,7 +40,8 @@ def test_livraison_hors_temperature_refus_partiel(page):
     page.click(".act:has-text('Livraison')")
     page.click(".liv-four:has-text('Pomona')")
     saisir(page, page.locator(".liv-temp").nth(0), "9")
-    saisir(page, page.locator(".liv-temp").nth(1), "3")             # Pomona ne livre que du frais : surgelés « Aucun »
+    saisir(page, page.locator(".liv-temp").nth(1), "6")             # légumes à +6 °C : conforme (seuil +8) ; surgelés « Aucun »
+    assert "ok" in page.locator(".liv-temp").nth(1).get_attribute("class"), "légumes à +6 °C dans la plage +1/+8"
     page_bl(page)
     page.click("text=Rien à signaler")
     page.wait_for_selector(".liv-verdict.bad:has-text('température')")
@@ -56,7 +60,7 @@ def test_livraison_fournisseur_sec_camion_seulement(page):
     connecter(page)
     page.click(".act:has-text('Livraison')")
     page.click(".liv-four:has-text('Cafés (sec)')")
-    assert page.locator(".liv-temp.aucun").count() == 2, "fournisseur sec : frais et surgelés pré-remplis « Aucun »"
+    assert page.locator(".liv-temp").count() == 2 and page.locator(".liv-temp.aucun").count() == 1, "fournisseur sec : pas de frais, surgelés « Aucun »"
     saisir(page, page.locator(".liv-temp").nth(0), "12")   # camion non réfrigéré : hors seuil
     assert page.locator("button.bigbtn").inner_text() == "Photographiez le bon de livraison"
 
@@ -64,9 +68,9 @@ def test_livraison_tout_refusee_sans_rangement(page):
     connecter(page)
     page.click(".act:has-text('Livraison')")
     page.click(".liv-four:has-text('Brake')")
-    assert page.locator(".liv-temp.aucun").count() == 1, "fournisseur de surgelés : « Aucun » frais pré-rempli"
+    assert page.locator(".liv-temp").count() == 2, "fournisseur de surgelés : camion et surgelés seulement"
     saisir(page, page.locator(".liv-temp").nth(0), "2")
-    saisir(page, page.locator(".liv-temp").nth(2), "-12")
+    saisir(page, page.locator(".liv-temp").nth(1), "-12")
     page_bl(page)
     page.click("text=DLC trop courte")
     page.click(".liv-dec:has-text('Tout refusé')")
@@ -102,3 +106,16 @@ def test_hors_ligne_puis_retour_du_reseau(page):
     page.evaluate("window.__demoHorsLigne = false; window.dispatchEvent(new Event('online'))")
     page.wait_for_selector(".sync.ok:has-text('Tout est envoyé')", timeout=5000)
     page.wait_for_selector(".task.faite:has-text('Relevé températures du matin')")
+
+
+def test_livraison_poisson_seuil_strict(page):
+    """Classeur du groupe : poisson 0/+2 °C. À +3 °C (accepté avant avec le seuil unique +4), la livraison est non conforme."""
+    connecter(page)
+    page.click(".act:has-text('Livraison')")
+    page.click(".liv-four:has-text('Marée du port')")
+    saisir(page, page.locator(".liv-temp").nth(0), "2")
+    saisir(page, page.locator(".liv-temp").nth(1), "3")
+    assert "bad" in page.locator(".liv-temp").nth(1).get_attribute("class")
+    page_bl(page)
+    page.click("text=Rien à signaler")
+    page.wait_for_selector(".liv-verdict.bad")

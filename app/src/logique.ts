@@ -1,5 +1,5 @@
 /** Règles métier pures (sans écran ni serveur) : ce sont elles que les tests unitaires vérifient. */
-import type { EtatFriteuse, SeuilsHuile, Tache, Gravite } from "./types";
+import type { EtatFriteuse, SeuilsHuile, Tache, Gravite, FamilleFrais } from "./types";
 
 export const MIN = 60_000;
 
@@ -80,6 +80,24 @@ export function etatAvecEnAttente(etat: EtatFriteuse[], ops: { type: string; at_
   return r;
 }
 
+/**
+ * Températures de réception des produits frais, par famille (classeur HACCP du groupe, nov. 2026) :
+ * produits laitiers 0/+4 °C, poisson 0/+2 °C, viande 0/+3 °C, fruits et légumes +1/+8 °C.
+ */
+export const SEUILS_FAMILLES: Record<FamilleFrais, { min: number; max: number; libelle: string; aucun: string }> = {
+  bof: { min: 0, max: 4, libelle: "Produits laitiers", aucun: "Pas de produits laitiers" },
+  poisson: { min: 0, max: 2, libelle: "Poisson", aucun: "Pas de poisson" },
+  viande: { min: 0, max: 3, libelle: "Viande", aucun: "Pas de viande" },
+  legumes: { min: 1, max: 8, libelle: "Fruits et légumes", aucun: "Pas de fruits et légumes" },
+};
+export const FAMILLES: FamilleFrais[] = ["bof", "poisson", "viande", "legumes"];
+export const familleOk = (f: FamilleFrais, v: number) => v >= SEUILS_FAMILLES[f].min && v <= SEUILS_FAMILLES[f].max;
+/** Familles à mesurer : celles que livre le fournisseur ; s'il livre du frais sans précision (ou s'il est inconnu), toutes. */
+export function famillesAMesurer(f: { produits?: readonly string[] | null; familles?: readonly FamilleFrais[] | null }): FamilleFrais[] {
+  if (f.familles?.length) return FAMILLES.filter((x) => f.familles!.includes(x));
+  return temperaturesDemandees(f.produits).frais ? FAMILLES : [];
+}
+
 /** Seuils de réception (camion et produits frais ≤ +4 °C, surgelés ≤ −18 °C). */
 export const SEUILS_LIVRAISON = { camion: 4, frais: 4, surgele: -18 } as const;
 export function temperaturesLivraisonOk(t: { camion?: number; frais?: number; surgele?: number }): boolean {
@@ -138,7 +156,8 @@ export const lecturePlausible = (methode: "glace" | "ebullition", v: number) =>
   Number.isFinite(v) && v >= BORNES_MESURE[methode].min && v <= BORNES_MESURE[methode].max;
 
 export function lectureConforme(methode: "glace" | "ebullition", valeur: number): boolean {
-  return methode === "glace" ? Math.abs(valeur) <= 0.5 : Math.abs(valeur - 100) <= 1;
+  // Classeur du groupe : dans la glace, conforme entre −1 et +1 °C (exclus) ; eau bouillante : 100 °C ± 1.
+  return methode === "glace" ? Math.abs(valeur) < 1 : Math.abs(valeur - 100) <= 1;
 }
 
 /** Une action est en retard si son échéance (jour, heure de Paris) est passée et qu'elle n'est pas corrigée. */
@@ -266,8 +285,9 @@ export const DECISIONS_LIVRAISON = [
  * Verdict calculé, jamais choisi : non conforme dès qu'une température dépasse son seuil, qu'un problème est signalé
  * ou que l'origine d'une viande manque. `motifs` sert à l'anomalie et aux statistiques fournisseurs.
  */
-export function verdictLivraison(r: { camion?: number; frais?: number; surgele?: number; problemes: string[]; viande: boolean; origine: boolean | null }): { conforme: boolean; motifs: string[]; graveTemperature: boolean } {
-  const temp = !temperaturesLivraisonOk({ camion: r.camion, frais: r.frais, surgele: r.surgele });
+export function verdictLivraison(r: { camion?: number; frais?: number; surgele?: number; produits?: Partial<Record<FamilleFrais, number>>; problemes: string[]; viande: boolean; origine: boolean | null }): { conforme: boolean; motifs: string[]; graveTemperature: boolean } {
+  const temp = !temperaturesLivraisonOk({ camion: r.camion, frais: r.frais, surgele: r.surgele })
+    || Object.entries(r.produits ?? {}).some(([f, v]) => v !== undefined && !familleOk(f as FamilleFrais, v));
   const motifs = [...(temp ? ["Température"] : []), ...r.problemes, ...(r.viande && r.origine === false ? ["Origine viande absente"] : [])];
   return { conforme: motifs.length === 0, motifs, graveTemperature: temp };
 }
@@ -283,4 +303,6 @@ export function temperaturesDemandees(produits?: readonly string[] | null): { fr
   if (!produits?.length) return { frais: true, surgele: true };
   return { frais: produits.includes("frais"), surgele: produits.includes("surgele") };
 }
-export const LIBELLE_PRODUITS: Record<string, string> = { frais: "frais", sec: "sec", surgele: "surgelés" };
+export const LIBELLE_PRODUITS: Record<string, string> = {
+  frais: "frais", sec: "sec", surgele: "surgelés", bof: "produits laitiers", poisson: "poisson", viande: "viande", legumes: "fruits et légumes",
+};

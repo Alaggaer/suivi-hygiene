@@ -5,7 +5,7 @@
  * Rien n'est jamais supprimé : ce qui manque dans le tableau reste tel quel (et est signalé).
  * Fonctions pures (sans réseau), testées par vitest.
  */
-import type { EnceinteGestion, Employe, FournisseurGestion, FriteuseGestion, ProduitLivre, RoleEmploye, SiteGestion } from "../types";
+import type { EnceinteGestion, Employe, FournisseurGestion, FriteuseGestion, ProduitLivre, RoleEmploye, SiteGestion, FamilleFrais } from "../types";
 
 export type Cellule = string | number | boolean | Date | null | undefined;
 export type Classeur = { sheet: string; data: Cellule[][] }[];
@@ -15,7 +15,7 @@ export interface RestoTableau { nom: string; ville: string; ouverture: string | 
 export interface EnceinteTableau { restaurant: string; nom: string; t_max: number; ordre: number }
 export interface FriteuseTableau { restaurant: string; nom: string; litres: number }
 export interface EmployeTableau { restaurant: string; nom: string; role: RoleEmploye }
-export interface FournisseurTableau { nom: string; produits: ProduitLivre[] | null; viande: boolean | null; jours: number[] | null }
+export interface FournisseurTableau { nom: string; produits: ProduitLivre[] | null; familles?: FamilleFrais[] | null; viande: boolean | null; jours: number[] | null }
 export interface Modele {
   restaurants: RestoTableau[]; enceintes: EnceinteTableau[]; friteuses: FriteuseTableau[];
   employes: EmployeTableau[]; fournisseurs: FournisseurTableau[]; problemes: Probleme[];
@@ -52,14 +52,27 @@ export function oui(c: Cellule): boolean | null {
 
 const ROLES: Record<string, RoleEmploye> = { EQUIPE: "equipe", EQUIPIER: "equipe", CHEF: "chef", "RESPONSABLE DE SITE": "responsable", RESPONSABLE: "responsable" };
 const PRODUITS: Record<string, ProduitLivre> = { FRAIS: "frais", SEC: "sec", SURGELE: "surgele", SURGELES: "surgele", SURGELÉ: "surgele" };
+// Familles de frais (chacune a sa température de réception) : « Viande, Poisson » vaut aussi « frais ».
+const FAMILLES_MOTS: Record<string, FamilleFrais> = {
+  BOF: "bof", LAITIER: "bof", LAITIERS: "bof", "PRODUITS LAITIERS": "bof", CREMERIE: "bof",
+  POISSON: "poisson", POISSONS: "poisson", MAREE: "poisson",
+  VIANDE: "viande", VIANDES: "viande", BOUCHERIE: "viande",
+  LEGUMES: "legumes", LEGUME: "legumes", FRUITS: "legumes", "FRUITS ET LEGUMES": "legumes", "FRUITS LEGUMES": "legumes", PRIMEUR: "legumes",
+};
+const mots = (c: Cellule) => texte(c).split(/[,;/+]|\bet\b(?!\s*l[ée]gumes)/i).map((x) => cle(x)).filter(Boolean);
 const JOURS = ["LU", "MA", "ME", "JE", "VE", "SA", "DI"];
 
 /** « Frais, Surgelé » → ["frais", "surgele"] ; null si vide ; undefined si un mot est inconnu. */
 export function produits(c: Cellule): ProduitLivre[] | null | undefined {
-  const mots = texte(c).split(/[,;/+]|\bet\b/i).map((x) => cle(x)).filter(Boolean);
-  if (!mots.length) return null;
-  const l = mots.map((m) => PRODUITS[m]);
-  return l.some((x) => !x) ? undefined : [...new Set(l)];
+  const m = mots(c);
+  if (!m.length) return null;
+  const l = m.map((x) => PRODUITS[x] ?? (FAMILLES_MOTS[x] ? "frais" as const : undefined));
+  return l.some((x) => !x) ? undefined : [...new Set(l as ProduitLivre[])];
+}
+/** « Viande, Poisson, Sec » → ["viande", "poisson"] ; null si aucune famille citée. */
+export function familles(c: Cellule): FamilleFrais[] | null {
+  const l = [...new Set(mots(c).map((x) => FAMILLES_MOTS[x]).filter(Boolean))];
+  return l.length ? l : null;
 }
 
 /** « lundi, jeudi », « lun mer ven », « mardi-samedi » → [1, 4] ; null si vide ; undefined si illisible. */
@@ -166,9 +179,9 @@ export function lireClasseur(classeur: Classeur): Modele {
     if (nom.length < 2) { pb("Fournisseurs", n, "Nom du fournisseur manquant"); continue; }
     if (fournisseurs.some((f) => meme(f.nom, nom))) { pb("Fournisseurs", n, `${nom} apparaît deux fois`); continue; }
     const p = produits(o.produits), j = jours(o.jours);
-    if (p === undefined) pb("Fournisseurs", n, `${nom} : produits « ${texte(o.produits)} » non reconnus (Frais, Sec, Surgelé), laissés tels quels`, false);
+    if (p === undefined) pb("Fournisseurs", n, `${nom} : produits « ${texte(o.produits)} » non reconnus (Frais, Sec, Surgelé, Viande, Poisson, Laitiers, Légumes), laissés tels quels`, false);
     if (j === undefined) pb("Fournisseurs", n, `${nom} : jours « ${texte(o.jours)} » non reconnus (ex. lundi, jeudi), laissés tels quels`, false);
-    fournisseurs.push({ nom, produits: p ?? null, viande: oui(o.viande), jours: j ?? null });
+    fournisseurs.push({ nom, produits: p ?? null, familles: p === undefined ? null : familles(o.produits), viande: oui(o.viande), jours: j ?? null });
   }
   return { restaurants, enceintes, friteuses, employes, fournisseurs, problemes };
 }
@@ -247,12 +260,13 @@ export function planifier(m: Modele, ex: Existant): Plan {
   for (const f of m.fournisseurs) {
     const v = ex.fournisseurs.find((x) => meme(x.nom, f.nom));
     if (!v) {
-      actions.push({ t: "fournisseur", libelle: `Nouveau fournisseur ${f.nom}`, ligne: { nom: f.nom, produits: f.produits, viande: !!f.viande, jours_livraison: f.jours, actif: true } });
+      actions.push({ t: "fournisseur", libelle: `Nouveau fournisseur ${f.nom}`, ligne: { nom: f.nom, produits: f.produits, familles: f.familles ?? null, viande: !!f.viande, jours_livraison: f.jours, actif: true } });
       continue;
     }
     // Une case vide dans le tableau ne change rien.
-    const n = { ...v, produits: f.produits ?? v.produits, viande: f.viande ?? v.viande, jours_livraison: f.jours ?? v.jours_livraison };
-    const diff = [!memes(n.produits, v.produits) && `livre ${(n.produits ?? []).join(", ")}`, n.viande !== v.viande && (n.viande ? "viande : oui" : "viande : non"),
+    const n = { ...v, produits: f.produits ?? v.produits, familles: f.familles ?? v.familles ?? null, viande: f.viande ?? v.viande, jours_livraison: f.jours ?? v.jours_livraison };
+    const diff = [!memes(n.produits, v.produits) && `livre ${(n.produits ?? []).join(", ")}`,
+      !memes(n.familles ?? null, v.familles ?? null) && `frais : ${(n.familles ?? []).join(", ")}`, n.viande !== v.viande && (n.viande ? "viande : oui" : "viande : non"),
       !memes(n.jours_livraison, v.jours_livraison) && "jours de livraison"].filter(Boolean);
     if (diff.length) actions.push({ t: "fournisseur", libelle: `${f.nom} : ${diff.join(", ")}`, ligne: n }); else inchanges++;
   }

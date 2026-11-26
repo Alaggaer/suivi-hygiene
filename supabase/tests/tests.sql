@@ -891,4 +891,23 @@ do $$ declare e jsonb := etat_alertes(); begin
   assert (e->>'ok')::boolean = false, 'sans appel réussi récent, la chaîne d''alertes n''est pas déclarée en bon état';
   assert e ? 'alertes_non_envoyees', 'détail des alertes non envoyées';
 end $$;
+-- classeur HACCP : seuils de réception par famille, thermomètre ±1 °C
+update auth.claims set jwt = '{"app_metadata":{"role":"siege"}}';
+do $$ declare f uuid := gen_random_uuid(); s uuid := '00000000-0000-0000-0000-000000000001'; p uuid := '00000000-0000-0000-0000-0000000000a1'; begin
+  insert into fournisseurs (id, nom, produits, familles) values (f, 'Marée test', '{frais}', '{poisson}');
+  -- légumes à +6 °C : conforme (avant : refusé à tort)
+  insert into livraisons (site_id, fournisseur_id, t_camion, t_produits, photo_bl, conforme, par) values (s, f, 3, '{"legumes": 6}', 'x', true, p);
+  -- poisson à +3 °C : ne peut pas être conforme (avant : accepté)
+  begin
+    insert into livraisons (site_id, fournisseur_id, t_camion, t_produits, photo_bl, conforme, par) values (s, f, 3, '{"poisson": 3}', 'x', true, p);
+    raise exception 'ÉCHEC : poisson à +3 °C enregistré conforme';
+  exception when invalid_parameter_value then null; end;
+  insert into livraisons (site_id, fournisseur_id, t_camion, t_produits, photo_bl, conforme, motifs, action, par) values (s, f, 3, '{"poisson": 3}', 'x', false, '{Température}', 'Tout refusé', p);
+  begin
+    insert into livraisons (site_id, fournisseur_id, t_camion, t_produits, photo_bl, conforme, par) values (s, f, 3, '{"crustaces": 1}', 'x', true, p);
+    raise exception 'ÉCHEC : famille inconnue acceptée';
+  exception when invalid_parameter_value then null; end;
+  -- ancienne saisie « frais » toujours acceptée (tablettes pas encore à jour)
+  insert into livraisons (site_id, fournisseur_id, t_camion, t_frais, photo_bl, conforme, par) values (s, f, 3, 3.5, 'x', true, p);
+end $$;
 \echo TOUS_LES_TESTS_SQL_OK

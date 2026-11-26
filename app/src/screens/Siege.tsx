@@ -4,7 +4,7 @@ import { AlertesSiege } from "./AlertesSiege";
 import { Gestion } from "./Gestion";
 import { useEffect, useMemo, useState } from "react";
 import type { AnomalieSiege, Api, Correction, Fournisseur, StockMortSiege, EtatRestaurant, JourHistorique, Preuves, TableCorrigeable, EtatAlertes } from "../types";
-import { BORNES_HUILE, bornesReleve, dansBornes, depuis, indicateursRestaurant, trierRestaurants, type Bornes, type Indicateur, type NiveauResto } from "../logique";
+import { BORNES_HUILE, bornesReleve, dansBornes, depuis, indicateursRestaurant, trierRestaurants, type Bornes, type Indicateur, type NiveauResto, LIBELLE_PRODUITS } from "../logique";
 
 /**
  * Espace siège :
@@ -296,7 +296,9 @@ function Fiche({ api, etat, anomalies, onChange, maintenant }: { api: Api; etat:
                   </button>
                   <div>
                     <div><b>{l.fournisseur}</b> <span className="hint">· {heure(l.at)}<Recu at={l.at} recu={l.recu_at} /> · {l.par}</span></div>
-                    <div className="hint">Camion {deg(l.t_camion)}{l.t_frais !== null ? ` · frais ${deg(l.t_frais)}` : ""}{l.t_surgele !== null ? ` · surgelé ${deg(l.t_surgele)}` : ""}</div>
+                    <div className="hint">Camion {deg(l.t_camion)}{l.t_frais !== null ? ` · frais ${deg(l.t_frais)}` : ""}
+                      {Object.entries(l.t_produits ?? {}).map(([f, v]) => ` · ${LIBELLE_PRODUITS[f] ?? f} ${deg(Number(v))}`).join("")}
+                      {l.t_surgele !== null ? ` · surgelé ${deg(l.t_surgele)}` : ""}</div>
                     {l.viande && <div className="hint">Viande · origine {l.origine_ok ? "vérifiée" : "non vérifiée"}</div>}
                     <div className="s3-pills">
                       <span className={`pill ${l.conforme ? "ok" : "bad"}`}>{l.conforme ? "conforme" : "non conforme"}</span>

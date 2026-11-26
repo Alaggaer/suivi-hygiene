@@ -271,7 +271,9 @@ export const demoApi: Api = {
   fournisseurs: () => {
     const tous = [1, 2, 3, 4, 5, 6, 7];
     return attendre([
-      { id: "fo0", nom: "Transgourmet", viande: true, jours: tous }, { id: "fo1", nom: "Pomona", viande: false, jours: tous, produits: ["frais"] },
+      { id: "fo0", nom: "Transgourmet", viande: true, jours: tous, produits: ["frais", "surgele"], familles: ["bof", "viande"] },
+      { id: "fo1", nom: "Pomona", viande: false, jours: tous, produits: ["frais"], familles: ["legumes"] },
+      { id: "fo6", nom: "Marée du port", viande: false, jours: [], produits: ["frais"], familles: ["poisson"] },
       { id: "fo2", nom: "Metro", viande: true, jours: [] }, { id: "fo3", nom: "Brake", viande: false, jours: [], produits: ["surgele"] },
       { id: "fo4", nom: "Boucherie (viandes)", viande: true, jours: [] }, { id: "fo5", nom: "Cafés (sec)", viande: false, jours: [], produits: ["sec"] },
     ]);

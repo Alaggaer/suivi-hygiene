@@ -27,6 +27,8 @@ export interface Tache {
 
 /** viande : la question de l'origine est posée ; jours : jours de livraison habituels (1 = lundi … 7 = dimanche). */
 export type ProduitLivre = "frais" | "sec" | "surgele";
+/** Familles de produits frais, chacune avec sa température de réception (classeur HACCP du groupe). */
+export type FamilleFrais = "bof" | "poisson" | "viande" | "legumes";
 /* ---------- Espace PMS : plan d'action, contrôles, métrologie ---------- */
 export interface ActionPlan {
   id: string; titre: string; categorie: string; gravite: Gravite; statut: "ouverte" | "traitee" | "verifiee"; source: string;
@@ -137,7 +139,7 @@ export interface SiteGestion { id: string; nom: string; ville: string; ouverture
 export interface EnceinteGestion { id?: string; site_id: string; nom: string; t_max: number; ordre: number; actif: boolean }
 export interface FriteuseGestion { id?: string; site_id: string; nom: string; litres: number; actif: boolean }
 export interface ModeleTache { id?: string; site_id: string; type: string; titre: string; heure_limite: string; jours: number[]; actif: boolean }
-export interface FournisseurGestion { id?: string; nom: string; viande: boolean; produits: ProduitLivre[] | null; jours_livraison: number[] | null; actif: boolean }
+export interface FournisseurGestion { id?: string; nom: string; viande: boolean; produits: ProduitLivre[] | null; familles?: FamilleFrais[] | null; jours_livraison: number[] | null; actif: boolean }
 export interface Tablette { id: string; email: string; site_id: string; cree_at: string; derniere_connexion: string | null }
 export type TableGestion = "controles_modeles" | "sites" | "enceintes" | "friteuses" | "taches_modeles" | "fournisseurs" | "nettoyage_elements" | "produits_entretien";
 /** Stocks morts : produit sorti de la carte (déclaré par le siège), et où en est ce restaurant. */
@@ -152,7 +154,7 @@ export interface StockMortSiege {
   sites: { site_id: string; restaurant: string; etat: EtatStock; quantite: string | null; dlc: string | null; photo: string | null;
     decision: DecisionStock | null; transfert_vers: string | null; par: string | null; at: string | null }[];
 }
-export interface Fournisseur { id: string; nom: string; viande?: boolean; jours?: number[] | null; produits?: ProduitLivre[] | null }
+export interface Fournisseur { id: string; nom: string; viande?: boolean; jours?: number[] | null; produits?: ProduitLivre[] | null; familles?: FamilleFrais[] | null }
 /** Livraison reçue aujourd'hui (liste de l'écran Livraisons). */
 export interface LivraisonJour {
   id: string; fournisseur: string; at: string; t_camion: number; conforme: boolean; action: string | null;
@@ -201,7 +203,7 @@ export interface Preuves {
   taches: { titre: string; echeance: string; faite_at: string | null; par: string | null }[];
   releves: { id: string; recu_at?: string; correction: Correction | null; rattrapage: string | null; enceinte: string; valeur: number; t_max: number; conforme: boolean; action: string | null; par: string; at: string }[];
   huiles: { id: string; recu_at?: string; correction: Correction | null; rattrapage: string | null; friteuse: string; polaires: number | null; filtrage: boolean; changement: boolean; non_utilisee: boolean; par: string; at: string }[];
-  livraisons: { id: string; recu_at?: string; correction: Correction | null; photos_bl_suite?: string[]; produits_refuses?: string | null; fournisseur: string; t_camion: number; t_frais: number | null; t_surgele: number | null; conforme: boolean; motifs: string[] | null;
+  livraisons: { id: string; recu_at?: string; correction: Correction | null; photos_bl_suite?: string[]; produits_refuses?: string | null; fournisseur: string; t_camion: number; t_frais: number | null; t_surgele: number | null; t_produits?: Partial<Record<FamilleFrais, number>> | null; conforme: boolean; motifs: string[] | null;
     action: string | null; viande: boolean; origine_ok: boolean | null; photo_bl: string; photo_nc: string | null; range_at: string | null; par: string; at: string }[];
   produits: { recu_at?: string; famille: string; service: string; photo: string; par: string; at: string }[];
   anomalies: { titre: string; gravite: Gravite; statut: Anomalie["statut"]; at: string }[];

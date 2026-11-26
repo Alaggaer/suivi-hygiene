@@ -1,0 +1,93 @@
+-- Classeur HACCP du groupe (mise à jour nov. 2026) :
+-- 1. Réception : température par famille de produits frais — laitiers 0/+4, poisson 0/+2, viande 0/+3, fruits et légumes +1/+8 °C
+--    (avant : un seul seuil « frais » à +4 °C, trop large pour le poisson et la viande, trop strict pour les légumes).
+--    L'ancienne saisie « frais » reste acceptée (tablettes pas encore à jour).
+-- 2. Thermomètre dans la glace : conforme entre −1 et +1 °C (avant : ±0,5 °C).
+alter table fournisseurs add column if not exists familles text[] check (familles <@ array['bof', 'poisson', 'viande', 'legumes']);
+alter table livraisons add column if not exists t_produits jsonb;
+
+create or replace function seuil_famille(p_famille text, out t_min numeric, out t_max numeric)
+language sql immutable set search_path = public as $$
+  select x.mn, x.mx from (values ('bof', 0::numeric, 4::numeric), ('poisson', 0, 2), ('viande', 0, 3), ('legumes', 1, 8)) x(f, mn, mx) where x.f = p_famille
+$$;
+
+create or replace function controler_vraisemblance() returns trigger
+language plpgsql set search_path = public as $$
+declare t numeric; k text; v jsonb; s record;
+begin
+  if tg_table_name = 'releves' then
+    select e.t_max into t from enceintes e where e.id = new.enceinte_id;
+    if t >= 0 and (new.valeur < -3 or new.valeur > 20) then
+      raise exception 'Température impossible pour une enceinte positive (entre −3 et +20 °C) : %', new.valeur using errcode = '22023';
+    elsif t < 0 and (new.valeur < -40 or new.valeur > 15) then
+      raise exception 'Température impossible pour une enceinte négative (entre −40 et +15 °C) : %', new.valeur using errcode = '22023';
+    end if;
+  elsif tg_table_name = 'huiles' then
+    if new.polaires is not null and (new.polaires < 0 or new.polaires > 40) then
+      raise exception 'Mesure d''huile impossible (entre 0 et 40 %%) : %', new.polaires using errcode = '22023';
+    end if;
+  elsif tg_table_name = 'livraisons' then
+    if new.t_camion < -30 or new.t_camion > 25 or new.t_frais < -5 or new.t_frais > 25 or new.t_surgele < -40 or new.t_surgele > 5 then
+      raise exception 'Température de livraison impossible' using errcode = '22023';
+    end if;
+    if new.conforme and (new.t_camion > 4 or new.t_frais > 4 or new.t_surgele > -18) then
+      raise exception 'Livraison hors température : elle ne peut pas être conforme' using errcode = '22023';
+    end if;
+    if new.t_produits is not null then
+      if jsonb_typeof(new.t_produits) <> 'object' then raise exception 'Températures par famille illisibles' using errcode = '22023'; end if;
+      for k, v in select * from jsonb_each(new.t_produits) loop
+        select * into s from seuil_famille(k);
+        if s.t_max is null then raise exception 'Famille de produits inconnue : %', k using errcode = '22023'; end if;
+        if jsonb_typeof(v) <> 'number' or (v #>> '{}')::numeric not between -5 and 25 then
+          raise exception 'Température de livraison impossible (%)', k using errcode = '22023';
+        end if;
+        if new.conforme and (v #>> '{}')::numeric not between s.t_min and s.t_max then
+          raise exception 'Livraison hors température (%) : elle ne peut pas être conforme', k using errcode = '22023';
+        end if;
+      end loop;
+    end if;
+  end if;
+  return new;
+end $$;
+
+create or replace function verifier_mesure() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  if not exists (select 1 from appareils_mesure where id = new.appareil_id and site_id = new.site_id) then
+    raise exception 'Appareil inconnu pour ce restaurant' using errcode = '23503';
+  end if;
+  if new.photo is null and new.document is null then raise exception 'Photo obligatoire (appareil dans le bain, ou certificat)' using errcode = '23514'; end if;
+  if new.methode = 'glace' then
+    if new.valeur is null or new.valeur not between -20 and 20 then raise exception 'Valeur lue impossible' using errcode = '22023'; end if;
+    new.conforme := abs(new.valeur) < 1;   -- classeur du groupe : conforme entre −1 et +1 °C (exclus)
+  elsif new.methode = 'ebullition' then
+    if new.valeur is null or new.valeur not between 80 and 120 then raise exception 'Valeur lue impossible' using errcode = '22023'; end if;
+    new.conforme := abs(new.valeur - 100) <= 1;
+  end if;
+  return new;
+end $$;
+
+create or replace function preuves_jour(p_site uuid, p_jour date)
+returns jsonb language plpgsql stable security definer set search_path = public, extensions as $$
+declare d timestamptz := (p_jour::timestamp at time zone 'Europe/Paris'); f timestamptz := ((p_jour + 1)::timestamp at time zone 'Europe/Paris');
+begin
+  if not est_siege() then raise exception 'Réservé au siège' using errcode = '42501'; end if;
+  return jsonb_build_object(
+    'taches', coalesce((select jsonb_agg(jsonb_build_object('titre', t.titre, 'echeance', t.echeance, 'faite_at', t.faite_at, 'par', p.nom) order by t.echeance)
+      from taches t left join profils p on p.id = t.faite_par where t.site_id = p_site and t.jour = p_jour), '[]'),
+    'releves', coalesce((select jsonb_agg(jsonb_build_object('id', r.id, 'enceinte', e.nom, 'valeur', r.valeur, 't_max', r.t_max, 'conforme', r.conforme, 'action', r.action,
+        'par', p.nom, 'at', heure_effective(r.at, r.at_client), 'recu_at', r.at, 'correction', correction_de('releves', r.id), 'rattrapage', r.rattrapage_motif) order by heure_effective(r.at, r.at_client), e.ordre)
+      from releves r join enceintes e on e.id = r.enceinte_id join profils p on p.id = r.par where r.site_id = p_site and heure_effective(r.at, r.at_client) >= d and heure_effective(r.at, r.at_client) < f), '[]'),
+    'huiles', coalesce((select jsonb_agg(jsonb_build_object('id', h.id, 'friteuse', fr.nom, 'polaires', h.polaires, 'filtrage', h.filtrage, 'changement', h.changement,
+        'non_utilisee', h.non_utilisee, 'par', p.nom, 'at', heure_effective(h.at, h.at_client), 'recu_at', h.at, 'correction', correction_de('huiles', h.id), 'rattrapage', h.rattrapage_motif) order by heure_effective(h.at, h.at_client), fr.nom)
+      from huiles h join friteuses fr on fr.id = h.friteuse_id join profils p on p.id = h.par where h.site_id = p_site and heure_effective(h.at, h.at_client) >= d and heure_effective(h.at, h.at_client) < f), '[]'),
+    'livraisons', coalesce((select jsonb_agg(jsonb_build_object('id', l.id, 'fournisseur', fo.nom, 't_camion', l.t_camion, 't_frais', l.t_frais, 't_surgele', l.t_surgele, 't_produits', l.t_produits, 'conforme', l.conforme,
+        'motifs', l.motifs, 'action', l.action, 'viande', l.viande, 'origine_ok', l.origine_ok, 'photo_bl', l.photo_bl, 'photos_bl_suite', coalesce(to_jsonb(l.photos_bl_suite), '[]'::jsonb), 'produits_refuses', l.produits_refuses, 'photo_nc', l.photo_nc, 'range_at', l.range_at,
+        'par', p.nom, 'at', heure_effective(l.at, l.at_client), 'recu_at', l.at, 'correction', correction_de('livraisons', l.id)) order by heure_effective(l.at, l.at_client))
+      from livraisons l join fournisseurs fo on fo.id = l.fournisseur_id join profils p on p.id = l.par where l.site_id = p_site and heure_effective(l.at, l.at_client) >= d and heure_effective(l.at, l.at_client) < f), '[]'),
+    'produits', coalesce((select jsonb_agg(jsonb_build_object('famille', u.famille, 'service', u.service, 'photo', u.photo, 'par', p.nom, 'at', heure_effective(u.at, u.at_client), 'recu_at', u.at) order by heure_effective(u.at, u.at_client))
+      from utilisations u join profils p on p.id = u.par where u.site_id = p_site and heure_effective(u.at, u.at_client) >= d and heure_effective(u.at, u.at_client) < f), '[]'),
+    'anomalies', coalesce((select jsonb_agg(jsonb_build_object('titre', a.titre, 'gravite', a.gravite, 'statut', a.statut, 'at', a.cree_at) order by a.cree_at)
+      from anomalies a where a.site_id = p_site and a.cree_at >= d and a.cree_at < f), '[]')
+  );
+end $$;
