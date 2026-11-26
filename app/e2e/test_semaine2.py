@@ -30,10 +30,9 @@ def test_livraison_conforme_verdict_automatique(page):
     bouton.click()
     page.wait_for_selector(".liv-ligne:has-text('Transgourmet'):has-text('Conforme')")
     assert "BL 2 pages" in page.locator(".liv-ligne:has-text('Transgourmet')").inner_text()
-    page.wait_for_selector(".tmr:has-text('Rangement · Transgourmet')")
-    page.click(".liv-ligne:has-text('Transgourmet') >> text=C'est rangé")
-    page.wait_for_selector(".liv-ligne:has-text('Transgourmet'):has-text('rangée à')")
-    assert page.locator(".tmr").count() == 0, "le minuteur de rangement disparaît"
+    # Plus de suivi du rangement (demande du chef exécutif) : ni chrono, ni « C'est rangé ».
+    assert page.locator(".tmr").count() == 0, "aucun chrono de rangement"
+    assert page.locator("text=C'est rangé").count() == 0
 
 def test_livraison_hors_temperature_refus_partiel(page):
     connecter(page)
@@ -64,7 +63,7 @@ def test_livraison_fournisseur_sec_camion_seulement(page):
     saisir(page, page.locator(".liv-temp").nth(0), "12")   # camion non réfrigéré : hors seuil
     assert page.locator("button.bigbtn").inner_text() == "Photographiez le bon de livraison"
 
-def test_livraison_tout_refusee_sans_rangement(page):
+def test_livraison_tout_refusee(page):
     connecter(page)
     page.click(".act:has-text('Livraison')")
     page.click(".liv-four:has-text('Brake')")
@@ -76,8 +75,8 @@ def test_livraison_tout_refusee_sans_rangement(page):
     page.click(".liv-dec:has-text('Tout refusé')")
     assert page.locator("button.bigbtn").inner_text() == "Valider le refus"
     page.click("button.bigbtn")
-    page.wait_for_selector(".liv-ligne:has-text('Brake'):has-text('rien à ranger')")
-    assert page.locator(".tmr").count() == 0, "pas de minuteur de rangement quand tout est refusé"
+    page.wait_for_selector(".liv-ligne:has-text('Brake'):has-text('Tout refusé')")
+    assert page.locator(".tmr").count() == 0
 
 def test_produit_utilise_photo_puis_famille(page):
     connecter(page)

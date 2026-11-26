@@ -23,7 +23,8 @@ export function etatMinuteur(m: Minuteur, maintenant: number): EtatMinuteur {
 
 const CLE = "suivi-hygiene:minuteurs";
 function lire(): Minuteur[] {
-  try { const v = JSON.parse(localStorage.getItem(CLE) || "[]"); return Array.isArray(v) ? v : []; } catch { return []; }
+  // Le rangement des livraisons n'est plus suivi (demande du chef exécutif) : un ancien chrono de rangement resté en mémoire est oublié.
+  try { const v = JSON.parse(localStorage.getItem(CLE) || "[]"); return Array.isArray(v) ? v.filter((m: Minuteur) => m.type !== "rangement") : []; } catch { return []; }
 }
 function ecrire(l: Minuteur[]) { try { localStorage.setItem(CLE, JSON.stringify(l)); } catch { /* stockage indisponible : minuteurs en mémoire seulement */ } }
 

@@ -233,7 +233,6 @@ export function indicateursRestaurant(e: EtatR): Indicateur[] {
     : e.friteuses_faites < e.friteuses ? { nom: "Huile", val: `${e.friteuses_faites}/${e.friteuses} faites`, niveau: "warn" }
     : { nom: "Huile", val: e.huile_max === null ? "OK" : `OK · ${String(e.huile_max).replace(".", ",")} %`, niveau: "ok" };
   const livr: Indicateur = e.livraisons_nc ? { nom: "Livraisons", val: `${e.livraisons_nc} non conforme${e.livraisons_nc > 1 ? "s" : ""}`, niveau: "warn" }
-    : e.livraisons_non_rangees ? { nom: "Livraisons", val: `${e.livraisons_non_rangees} non rangée${e.livraisons_non_rangees > 1 ? "s" : ""}`, niveau: "warn" }
     : e.livraisons ? { nom: "Livraisons", val: `${e.livraisons} conforme${e.livraisons > 1 ? "s" : ""}`, niveau: "ok" }
     : { nom: "Livraisons", val: "aucune", niveau: "neutre" };
   const anom: Indicateur = e.anomalies_critiques ? { nom: "Anomalies", val: `${e.anomalies_critiques} critique${e.anomalies_critiques > 1 ? "s" : ""}`, niveau: "bad" }

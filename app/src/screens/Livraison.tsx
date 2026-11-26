@@ -3,13 +3,11 @@ import type { FamilleFrais, Fournisseur, LivraisonJour } from "../types";
 import type { Entree } from "../hors-ligne/stockage";
 import { nouvelId, useContexte, useEnregistrer } from "../contexte";
 import {
-  BORNES_LIVRAISON, cheminPhoto, DECISIONS_LIVRAISON, familleOk, famillesAMesurer, LIBELLE_PRODUITS, MIN, temperaturesDemandees, PROBLEMES_LIVRAISON,
+  BORNES_LIVRAISON, cheminPhoto, DECISIONS_LIVRAISON, familleOk, famillesAMesurer, LIBELLE_PRODUITS, temperaturesDemandees, PROBLEMES_LIVRAISON,
   SEUILS_FAMILLES, SEUILS_LIVRAISON, trierFournisseurs, verdictLivraison,
 } from "../logique";
-import type { Minuteur } from "../minuteurs";
 import { compresserPhoto } from "../photos";
-import { useRangerLivraison } from "../rangement";
-import { duree, PaveNumerique, temp, useMaintenant, useToast } from "../ui/outils";
+import { PaveNumerique, temp, useToast } from "../ui/outils";
 
 // Produits frais : une température par famille (poisson, viande, laitiers, légumes), chacune avec ses seuils.
 type Champ = "camion" | "surgele" | FamilleFrais;
@@ -20,26 +18,21 @@ const champOk = (k: Champ, v: number) => (estFamille(k) ? familleOk(k, v) : v <=
 const heure = (iso: string) => new Date(iso).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
 
 /**
- * Livraisons : la liste du jour (fournisseurs attendus en premier, livraisons reçues à ranger),
+ * Livraisons : la liste du jour (fournisseurs attendus en premier, livraisons déjà reçues),
  * puis la réception sur une seule page, avec un verdict calculé (jamais choisi).
  */
-export function Livraison({ onFini, lancerMinuteur, minuteurs, retirerMinuteur, enAttente = [] }: {
-  onFini: () => void; lancerMinuteur: (m: Minuteur) => void; minuteurs: Minuteur[]; retirerMinuteur: (id: string) => void; enAttente?: Entree[];
+export function Livraison({ onFini, enAttente = [] }: {
+  onFini: () => void; enAttente?: Entree[];
 }) {
   const [four, setFour] = useState<Fournisseur | null>(null);
-  if (four) return <Reception four={four} onAnnuler={() => setFour(null)} onFini={() => setFour(null)} lancerMinuteur={lancerMinuteur} />;
-  return <ListeDuJour onRetour={onFini} onChoisir={setFour} minuteurs={minuteurs} retirerMinuteur={retirerMinuteur} enAttente={enAttente} />;
+  if (four) return <Reception four={four} onAnnuler={() => setFour(null)} onFini={() => setFour(null)} />;
+  return <ListeDuJour onRetour={onFini} onChoisir={setFour} enAttente={enAttente} />;
 }
 
 /* ---------- Liste du jour ---------- */
 
-function ListeDuJour({ onRetour, onChoisir, minuteurs, retirerMinuteur, enAttente }: {
-  onRetour: () => void; onChoisir: (f: Fournisseur) => void; minuteurs: Minuteur[]; retirerMinuteur: (id: string) => void; enAttente: Entree[];
-}) {
+function ListeDuJour({ onRetour, onChoisir, enAttente }: { onRetour: () => void; onChoisir: (f: Fournisseur) => void; enAttente: Entree[] }) {
   const { api } = useContexte();
-  const toast = useToast();
-  const ranger = useRangerLivraison(minuteurs, retirerMinuteur);
-  const maintenant = useMaintenant(15_000);
   const [fournisseurs, setFournisseurs] = useState<Fournisseur[]>([]);
   const [serveur, setServeur] = useState<LivraisonJour[]>([]);
   const [erreur, setErreur] = useState<string | null>(null);
@@ -57,7 +50,6 @@ function ListeDuJour({ onRetour, onChoisir, minuteurs, retirerMinuteur, enAttent
         l.push({ id: op.id, fournisseur: op.fournisseur_nom, at: op.at_client, t_camion: op.t_camion, conforme: op.conforme, action: op.action ?? null,
           produits_refuses: op.produits_refuses ?? null, pages: 1 + (op.photos_bl_suite?.length ?? 0), range_at: null });
       }
-      if (op.type === "livraison_rangee") { const x = l.find((y) => y.id === op.livraison_id); if (x && !x.range_at) x.range_at = op.at_client; }
     }
     return l.sort((a, b) => a.at.localeCompare(b.at));
   }, [serveur, enAttente]);
@@ -83,7 +75,6 @@ function ListeDuJour({ onRetour, onChoisir, minuteurs, retirerMinuteur, enAttent
         <h2 className="liv-titre">Déjà reçues aujourd'hui</h2>
         {!recues.length && <p className="hint">Aucune livraison reçue pour l'instant.</p>}
         {recues.map((l) => {
-          const m = minuteurs.find((x) => x.type === "rangement" && x.ref === l.id);
           const refuseTout = l.action === "Tout refusé";
           const [statut, cls] = l.conforme ? ["Conforme", "ok"] : refuseTout ? ["Tout refusé", "bad"] : l.action === "Une partie refusée" ? ["Refus partiel", "bad"] : ["Sous réserve", "warn"];
           return (
@@ -91,12 +82,6 @@ function ListeDuJour({ onRetour, onChoisir, minuteurs, retirerMinuteur, enAttent
               <span className="hint num">{heure(l.at)}</span>
               <span><b>{l.fournisseur}</b> <span className="hint">· camion {temp(l.t_camion)} · BL {l.pages} page{l.pages > 1 ? "s" : ""}{l.produits_refuses ? ` · refusé : ${l.produits_refuses}` : ""}</span></span>
               <span className={`pill ${cls}`}>{statut}</span>
-              {l.range_at || refuseTout
-                ? <span className="hint">{refuseTout ? "rien à ranger" : `rangée à ${heure(l.range_at!)}`}</span>
-                : <span className="liv-ranger">
-                    {m && <span className={`hint ${maintenant - m.debut > m.duree ? "t-bad" : ""}`}>{duree(Math.abs(m.debut + m.duree - maintenant))} {maintenant - m.debut > m.duree ? "de retard" : "restantes"}</span>}
-                    <button className="opt sel" onClick={async () => { await ranger(l.id, l.fournisseur); toast("Livraison rangée"); }}>C'est rangé</button>
-                  </span>}
             </div>
           );
         })}
@@ -107,7 +92,7 @@ function ListeDuJour({ onRetour, onChoisir, minuteurs, retirerMinuteur, enAttent
 
 /* ---------- Réception sur une page ---------- */
 
-function Reception({ four, onAnnuler, onFini, lancerMinuteur }: { four: Fournisseur; onAnnuler: () => void; onFini: () => void; lancerMinuteur: (m: Minuteur) => void }) {
+function Reception({ four, onAnnuler, onFini }: { four: Fournisseur; onAnnuler: () => void; onFini: () => void }) {
   const { api, site } = useContexte();
   const enregistrer = useEnregistrer();
   const toast = useToast();
@@ -160,13 +145,7 @@ function Reception({ four, onAnnuler, onFini, lancerMinuteur }: { four: Fourniss
         id: nouvelId(), source: "livraison", ref_id: id, categorie: "Livraison", gravite: v.graveTemperature ? "majeure" : "mineure",
         titre: `Livraison ${four.nom} non conforme : ${v.motifs.join(", ")} · ${dec}${refuses.trim() ? ` (${refuses.trim()})` : ""}`, photo: nc?.chemin,
       }] });
-      if (dec === "Tout refusé") {
-        await enregistrer({ type: "livraison_rangee", livraison_id: id });   // rien à ranger : pas de minuteur
-        toast("Livraison refusée enregistrée");
-      } else {
-        lancerMinuteur({ id: nouvelId(), type: "rangement", libelle: `Rangement · ${four.nom}`, debut: maintenant, duree: 15 * MIN, alerte: 10 * MIN, ref: id, donnees: { fournisseur: four.nom } });
-        toast("Livraison enregistrée · rangement : 15 min");
-      }
+      toast(dec === "Tout refusé" ? "Livraison refusée enregistrée" : "Livraison enregistrée");
       onFini();
     } catch (e) { setErreur((e as Error).message); setEnvoi(false); }
   }
@@ -243,7 +222,7 @@ function Reception({ four, onAnnuler, onFini, lancerMinuteur }: { four: Fourniss
 
       {erreur && <p className="pill bad">{erreur}</p>}
       <button className="bigbtn" disabled={!pret || envoi} onClick={valider}>
-        {envoi ? "Enregistrement…" : manque ?? (dec === "Tout refusé" ? "Valider le refus" : "Valider · lancer le rangement (15 min)")}
+        {envoi ? "Enregistrement…" : manque ?? (dec === "Tout refusé" ? "Valider le refus" : "Valider la réception")}
       </button>
       {pave && (
         <PaveNumerique titre={`${libelle(pave)} · ${seuil(pave)}`} unite="°C" signe bornes={BORNES_LIVRAISON[estFamille(pave) ? "frais" : pave]}

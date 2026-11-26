@@ -73,8 +73,8 @@ do $$ declare a passage; b passage; begin
   -- Ce que le serveur devait produire, avec la bonne origine
   assert (select count(*) from anomalies where source = 'tache' and ref_id = '5e000000-0000-0000-0000-0000000000a1') = 1,
     'tâche oubliée : exactement une anomalie, origine « tache »';
-  assert (select count(*) from anomalies where source = 'rangement' and ref_id = '5e000000-0000-0000-0000-0000000000d1') = 1,
-    'livraison non rangée : exactement une anomalie, origine « rangement »';
+  assert (select count(*) from anomalies where source = 'rangement' and ref_id = '5e000000-0000-0000-0000-0000000000d1') = 0,
+    'rangement plus suivi : aucune anomalie de rangement';
   assert not exists (select 1 from anomalies where site_id = '5e000000-0000-0000-0000-000000000001'
                      and source = 'manuel' and id <> '5e000000-0000-0000-0000-0000000000e1'),
     'aucune anomalie du serveur ne doit perdre son origine';

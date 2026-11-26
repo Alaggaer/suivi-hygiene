@@ -302,7 +302,6 @@ function Fiche({ api, etat, anomalies, onChange, maintenant }: { api: Api; etat:
                     {l.viande && <div className="hint">Viande · origine {l.origine_ok ? "vérifiée" : "non vérifiée"}</div>}
                     <div className="s3-pills">
                       <span className={`pill ${l.conforme ? "ok" : "bad"}`}>{l.conforme ? "conforme" : "non conforme"}</span>
-                      <span className={`pill ${l.range_at ? "none" : "warn"}`}>{l.range_at ? `rangée ${heure(l.range_at)}` : "rangement non validé"}</span>
                     </div>
                     {!l.conforme && <div className="hint">{(l.motifs ?? []).join(", ")} · {l.action}</div>}
                     {l.produits_refuses && <div className="hint">Produits refusés : {l.produits_refuses}</div>}

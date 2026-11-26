@@ -16,7 +16,6 @@ import { AlertesProduit, avecEnAttente } from "./screens/AlertesProduit";
 import { Nettoyage, ProduitsEntretien } from "./screens/Nettoyage";
 import { EspacePms } from "./screens/EspacePms";
 import { prechargerFiches } from "./fiches";
-import { useRangerLivraison } from "./rangement";
 import { Produit } from "./screens/Produit";
 import { duree, hm, MIN, PaveNumerique, temp, useInactivite, useMaintenant, useToast } from "./ui/outils";
 import { minuteurConforme } from "./logique";
@@ -152,7 +151,7 @@ export default function App({ api, file }: { api: Api; file: FileEnvoi }) {
   else if (!profil) corps = <Connexion api={api} onConnecte={(p) => { setProfil(p); toast(`Bonjour ${p.nom}`); }} />;
   else if (ecran.nom === "releves") corps = <Releves tache={ecran.tache} onFini={retour} />;
   else if (ecran.nom === "huile") corps = <Huile tache={ecran.tache} onFini={retour} enAttente={entrees} />;
-  else if (ecran.nom === "livraison") corps = <Livraison onFini={retour} lancerMinuteur={minuteurs.ajouter} minuteurs={minuteurs.liste} retirerMinuteur={minuteurs.retirer} enAttente={entrees} />;
+  else if (ecran.nom === "livraison") corps = <Livraison onFini={retour} enAttente={entrees} />;
   else if (ecran.nom === "produit") corps = <Produit onFini={retour} />;
   else if (ecran.nom === "anomalies") corps = <Anomalies anomalies={anomalies} onRetour={retour} />;
   else if (ecran.nom === "minuteur") corps = <LancerMinuteur onFini={retour} lancer={minuteurs.ajouter} />;
@@ -202,7 +201,6 @@ function Synchro({ enLigne, attente, bloquees, onVoir }: { enLigne: boolean; att
 
 /** Minuteurs en cours, visibles sur tous les écrans. Alerte sonore et message au passage des seuils. */
 function Bandeau({ minuteurs, retirer }: { minuteurs: Minuteur[]; retirer: (id: string) => void }) {
-  const ranger = useRangerLivraison(minuteurs, retirer);
   const maintenant = useMaintenant(1000);
   const enregistrer = useEnregistrer();
   const toast = useToast();
@@ -237,10 +235,7 @@ function Bandeau({ minuteurs, retirer }: { minuteurs: Minuteur[]; retirer: (id: 
 
   async function terminer(m: Minuteur) {
     if (m.type !== "rangement") { setSaisie(m); return; }
-    if (m.ref) {
-      await ranger(m.ref, String(m.donnees?.fournisseur ?? ""));
-      toast("Livraison rangée");
-    }
+    retirer(m.id);   // ancien chrono de rangement (plus suivi)
   }
 
   if (!minuteurs.length) return null;

@@ -103,11 +103,11 @@ end $$;
 
 
 
--- rangement non validé : anomalie après 45 min, une seule fois
+-- rangement plus suivi (0043) : aucune anomalie, même 50 min après une livraison non rangée
 insert into livraisons(id,site_id,fournisseur_id,t_camion,photo_bl,conforme,par,at) values ('00000000-0000-0000-0000-0000000000d2','00000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-0000000000f1',3,'y.webp',true,'00000000-0000-0000-0000-0000000000a1', now() - interval '50 minutes');
 do $$ begin
   perform escalader(); perform escalader();
-  assert (select count(*) from anomalies where source = 'rangement' and ref_id = '00000000-0000-0000-0000-0000000000d2') = 1, 'rangement non validé → 1 anomalie';
+  assert (select count(*) from anomalies where source = 'rangement' and ref_id = '00000000-0000-0000-0000-0000000000d2') = 0, 'rangement plus suivi : pas d''anomalie';
   assert (select count(*) from anomalies where source = 'rangement' and ref_id = '00000000-0000-0000-0000-0000000000d1') = 0, 'livraison rangée → pas d''anomalie';
 end $$;
 
